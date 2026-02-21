@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
-  'https://jznfomuaxipfigxgokap.supabase.co', 
-  'sb_publishable_WjqrlE0gXGWUUYSkefmZBQ_NIzjJHNn'
+  'https://dtrimzswyuwunywokekh.supabase.co', 
+  'sb_publishable__gX8fP0sXBZhIFgCAM90UA_QQg03P79'
 );
 
 // --- TEMA DARK MODE ---
@@ -778,3 +778,4 @@ export default function App() {
     </div>
   );
 }
+
