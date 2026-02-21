@@ -23,7 +23,7 @@ const theme = {
 
 export default function App() {
   // NUEVO ESTADO PARA LOGIN
-  const [usuarioActual, setUsuarioActual] = useState(localStorage.getItem('userPacaPro') || '');
+  const [usuarioActual, setUsuarioActual] = useState(localStorage.getItem('userStilaPro') || '');
   const [inputLogin, setInputLogin] = useState('');
 
   const [carrito, setCarrito] = useState([]);
@@ -43,7 +43,7 @@ export default function App() {
   // --- NUEVOS ESTADOS APARTADOS ---
   const [apartados, setApartados] = useState([]);
   const [nuevoApartado, setNuevoApartado] = useState({ cliente: '', producto: '', total: '', anticipo: '', telefono: '' });
-  const TIEMPO_LIMITE_HS = 168; // CAMBIO: De 24 a 168 (7 días * 24 horas)
+  const TIEMPO_LIMITE_HS = 168; // 7 días * 24 horas
   
   const obtenerFechaLocal = () => {
     const d = new Date();
@@ -63,11 +63,11 @@ export default function App() {
   useEffect(() => { 
     if (usuarioActual) {
       obtenerTodo(); 
-      const cortesGuardados = localStorage.getItem('cortesPacaPro');
+      const cortesGuardados = localStorage.getItem('cortesStilaPro');
       if (cortesGuardados) setCortes(JSON.parse(cortesGuardados));
       
       // Cargar apartados locales
-      const apartadosGuardados = localStorage.getItem('apartadosPacaPro');
+      const apartadosGuardados = localStorage.getItem('apartadosStilaPro');
       if (apartadosGuardados) setApartados(JSON.parse(apartadosGuardados));
 
       // CARGAR LIBRERÍAS DE EXPORTACIÓN DINÁMICAMENTE
@@ -129,12 +129,12 @@ export default function App() {
     if (inputLogin.trim()) {
       const user = inputLogin.trim().toUpperCase();
       setUsuarioActual(user);
-      localStorage.setItem('userPacaPro', user);
+      localStorage.setItem('userStilaPro', user);
     }
   };
 
   const cerrarSesion = () => {
-    localStorage.removeItem('userPacaPro');
+    localStorage.removeItem('userStilaPro');
     setUsuarioActual('');
   };
 
@@ -202,12 +202,12 @@ export default function App() {
     };
     const listaActualizada = [nuevo, ...apartados];
     setApartados(listaActualizada);
-    localStorage.setItem('apartadosPacaPro', JSON.stringify(listaActualizada));
+    localStorage.setItem('apartadosStilaPro', JSON.stringify(listaActualizada));
     setNuevoApartado({ cliente: '', producto: '', total: '', anticipo: '', telefono: '' });
   };
 
   const generarWhatsAppApartado = (ap) => {
-    let msg = `*🔖 COMPROBANTE DE APARTADO - PACA PRO*\n`;
+    let msg = `*🔖 COMPROBANTE DE APARTADO - STILA-PRO*\n`;
     msg += `--------------------------\n`;
     msg += `👤 Cliente: *${ap.cliente}*\n`;
     msg += `📦 Producto: *${ap.producto}*\n`;
@@ -215,7 +215,7 @@ export default function App() {
     msg += `💵 Anticipo: *$${ap.anticipo}*\n`;
     msg += `📉 Restante: *${ap.restante}*\n`;
     msg += `--------------------------\n`;
-    msg += `⏳ Tiempo límite: 7 días para liquidar.\n`; // CAMBIO: Texto actualizado a 7 días
+    msg += `⏳ Tiempo límite: 7 días para liquidar.\n`;
     msg += `¡Gracias por apartar! ✨`;
     window.open(`https://wa.me/${ap.telefono}?text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -224,10 +224,10 @@ export default function App() {
     if(!window.confirm("¿Eliminar este registro?")) return;
     const filtrados = apartados.filter(a => a.id !== id);
     setApartados(filtrados);
-    localStorage.setItem('apartadosPacaPro', JSON.stringify(filtrados));
+    localStorage.setItem('apartadosStilaPro', JSON.stringify(filtrados));
   };
 
-  // NUEVA FUNCIÓN: APARTAR DESDE CARRITO AFECTANDO STOCK
+  // APARTAR DESDE CARRITO AFECTANDO STOCK
   async function apartarDesdeCarrito() {
     if (carrito.length === 0) return;
     
@@ -242,7 +242,7 @@ export default function App() {
     const productosTxt = carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ');
 
     try {
-      // 1. Afectar Inventario en Supabase (como una compra)
+      // 1. Afectar Inventario en Supabase
       for (const item of carritoAgrupado) {
         const pDB = inventario.find(p => p.id === item.id);
         if (pDB) {
@@ -266,7 +266,7 @@ export default function App() {
 
       const listaActualizada = [nuevo, ...apartados];
       setApartados(listaActualizada);
-      localStorage.setItem('apartadosPacaPro', JSON.stringify(listaActualizada));
+      localStorage.setItem('apartadosStilaPro', JSON.stringify(listaActualizada));
 
       // 3. Limpiar y refrescar
       alert("Apartado registrado y stock descontado.");
@@ -274,7 +274,6 @@ export default function App() {
       await obtenerTodo();
       setVista('apartados');
       
-      // Enviar WA automáticamente
       generarWhatsAppApartado(nuevo);
 
     } catch (e) {
@@ -343,9 +342,9 @@ export default function App() {
 
     const nuevosCortes = [nuevoCorte, ...cortes];
     setCortes(nuevosCortes);
-    localStorage.setItem('cortesPacaPro', JSON.stringify(nuevosCortes));
+    localStorage.setItem('cortesStilaPro', JSON.stringify(nuevosCortes));
 
-    let msg = `*🏁 REPORTE CIERRE - PACA PRO*\n`;
+    let msg = `*🏁 REPORTE CIERRE - STILA-PRO*\n`;
     msg += `📅 Fecha: ${fechaConsulta}\n`;
     msg += `👤 Responsable: *${usuarioActual}*\n`;
     msg += `--------------------------\n`;
@@ -383,7 +382,7 @@ export default function App() {
         if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
       }
 
-      let ticketMsg = `*🛍️ TICKET DE COMPRA - PACA PRO*\n`;
+      let ticketMsg = `*🛍️ TICKET DE COMPRA - STILA-PRO*\n`;
       ticketMsg += `--------------------------\n`;
       ticketMsg += `🆔 Folio: *${folioVenta}*\n`;
       ticketMsg += `👤 Vendedor: *${usuarioActual}*\n`;
@@ -424,7 +423,7 @@ export default function App() {
     return (
       <div style={{ backgroundColor: theme.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'sans-serif' }}>
         <div style={{ ...cardStyle, width: '100%', maxWidth: '350px', textAlign: 'center' }}>
-          <h1 style={{ color: theme.accent, fontSize: '24px', marginBottom: '10px' }}>PACA PRO ⚡</h1>
+          <h1 style={{ color: theme.accent, fontSize: '24px', marginBottom: '10px' }}>STILA-PRO ⚡</h1>
           <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '20px' }}>Ingresa tu nombre para comenzar</p>
           <form onSubmit={manejarLogin}>
             <input 
@@ -444,7 +443,7 @@ export default function App() {
   return (
     <div style={{ fontFamily: 'sans-serif', backgroundColor: theme.bg, color: theme.text, minHeight: '100vh', paddingBottom: '100px' }}>
       <header style={{ background: theme.card, padding: '10px 15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}` }}>
-        <h1 style={{margin:0, fontSize:'14px'}}>PACA PRO <span style={{color: theme.accent}}>v15</span></h1>
+        <h1 style={{margin:0, fontSize:'14px'}}>STILA-PRO <span style={{color: theme.accent}}>v15</span></h1>
         <div style={{ display:'flex', alignItems:'center', gap: '10px'}}>
            <span style={{ fontSize: '10px', color: theme.textMuted }}>👤 {usuarioActual}</span>
            <button onClick={cerrarSesion} style={{ background: 'none', border: 'none', color: theme.danger, fontSize: '10px' }}>SALIR</button>
@@ -522,7 +521,6 @@ export default function App() {
           </>
         )}
 
-        {/* --- NUEVA VISTA: APARTADOS --- */}
         {vista === 'apartados' && (
           <div style={{ animation: 'fadeIn 0.3s ease' }}>
             <div style={{...cardStyle, border: `1px solid ${theme.apartado}50`}}>
@@ -778,4 +776,3 @@ export default function App() {
     </div>
   );
 }
-
