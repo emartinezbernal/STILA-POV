@@ -23,19 +23,21 @@ const theme = {
 };
 
 export default function App() {
-  // NUEVO ESTADO PARA LOGIN - MODIFICADO PARA ROLES
+  // NUEVO ESTADO PARA LOGIN - MODIFICADO PARA SOPORTAR OBJETOS CON ROL
   const [usuarioActual, setUsuarioActual] = useState(() => {
     const guardado = localStorage.getItem('userStilaPro');
+    if (!guardado) return null;
     try {
-      return guardado ? JSON.parse(guardado) : null;
-    } catch {
-      return null;
+      return JSON.parse(guardado);
+    } catch (e) {
+      // Compatibilidad con versiones anteriores que guardaban solo el string del nombre
+      return { nombre: guardado, rol: 'vendedor' };
     }
   });
   const [inputLogin, setInputLogin] = useState('');
 
   const [carrito, setCarrito] = useState([]);
-  const [vista, setVista] = useState('catalogo'); 
+  const [vista, setVista] = useState('catalogo'); // CAMBIADO DE 'live' A 'catalogo'
   const [inventario, setInventario] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [historial, setHistorial] = useState([]);
@@ -75,12 +77,15 @@ export default function App() {
   const [nuevoGasto, setNuevoGasto] = useState({ concepto: '', monto: '' });
   const inputNombreRef = useRef(null);
 
-  // REDIRECCIÓN DE SEGURIDAD SEGÚN ROL
+  // --- LÓGICA DE PROTECCIÓN Y REDIRECCIÓN ---
   useEffect(() => {
     if (usuarioActual) {
+      // Redirigir instalador si intenta salir de su módulo
       if (usuarioActual.rol === 'instalador' && vista !== 'installations') {
         setVista('installations');
-      } else if (usuarioActual.rol === 'vendedor' && vista === 'admin') {
+      }
+      // Redirigir vendedor si intenta entrar a admin
+      if (usuarioActual.rol === 'vendedor' && vista === 'admin') {
         setVista('catalogo');
       }
     }
@@ -95,7 +100,6 @@ export default function App() {
       const apartadosGuardados = localStorage.getItem('apartadosStilaPro');
       if (apartadosGuardados) setApartados(JSON.parse(apartadosGuardados));
 
-      // Cargar instalaciones
       const instGuardadas = localStorage.getItem('instStilaPro');
       if (instGuardadas) setInstalaciones(JSON.parse(instGuardadas));
 
@@ -124,17 +128,35 @@ export default function App() {
     if (g) setGastos(g);
   }
 
+  // --- LÓGICA DE LOGIN CON ROLES ---
+  const manejarLogin = (e) => {
+    e.preventDefault();
+    const input = inputLogin.trim();
+    if (input) {
+      let rol = 'vendedor';
+      if (input.toUpperCase() === 'ADMIN123') rol = 'admin';
+      else if (input.toUpperCase() === 'INSTALADOR01') rol = 'instalador';
+      
+      const nuevoUsuario = { nombre: input, rol: rol };
+      setUsuarioActual(nuevoUsuario);
+      localStorage.setItem('userStilaPro', JSON.stringify(nuevoUsuario));
+      
+      // Vista inicial según rol
+      if (rol === 'instalador') setVista('installations');
+      else setVista('catalogo');
+    }
+  };
+
+  const cerrarSesion = () => {
+    localStorage.removeItem('userStilaPro');
+    setUsuarioActual(null);
+  };
+
   // --- LÓGICA INSTALACIONES ---
   const guardarInstalacion = (e) => {
     e.preventDefault();
     const id = Date.now();
-    const nueva = { 
-      ...nuevaInst, 
-      id, 
-      estado: 'En proceso', 
-      evidencia: null,
-      creadoPor: usuarioActual.nombre 
-    };
+    const nueva = { ...nuevaInst, id, estado: 'En proceso', evidencia: null };
     const lista = [nueva, ...instalaciones];
     setInstalaciones(lista);
     localStorage.setItem('instStilaPro', JSON.stringify(lista));
@@ -158,14 +180,6 @@ export default function App() {
     }
   };
 
-  const cambiarEstadoInst = (id, nuevoEstado) => {
-    const lista = instalaciones.map(inst => 
-      inst.id === id ? { ...inst, estado: nuevoEstado } : inst
-    );
-    setInstalaciones(lista);
-    localStorage.setItem('instStilaPro', JSON.stringify(lista));
-  };
-
   const eliminarInstalacion = (id) => {
     if(!window.confirm("¿Eliminar registro de instalación?")) return;
     const lista = instalaciones.filter(i => i.id !== id);
@@ -173,133 +187,40 @@ export default function App() {
     localStorage.setItem('instStilaPro', JSON.stringify(lista));
   };
 
-  // --- FUNCIONES DE EXPORTACIÓN ---
-  const exportarExcelGenerico = (datos, nombreArchivo) => {
-    if (!window.XLSX) return alert("Cargando motor de Excel...");
-    const ws = window.XLSX.utils.json_to_sheet(datos);
-    const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, "Datos");
-    window.XLSX.writeFile(wb, `${nombreArchivo}_${hoyStr}.xlsx`);
-  };
-
-  const exportarPDFGenerico = (titulo, columnas, filas, nombreArchivo) => {
-    if (!window.jspdf) return alert("Cargando motor de PDF...");
-    const doc = new window.jspdf.jsPDF();
-    doc.setFontSize(18);
-    doc.text(titulo, 14, 22);
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-    doc.text(`Generado por: ${usuarioActual.nombre} - ${new Date().toLocaleString()}`, 14, 30);
-    doc.autoTable({
-      startY: 35,
-      head: [columnas],
-      body: filas,
-      theme: 'grid',
-      headStyles: { fillColor: [16, 185, 129] }
-    });
-    doc.save(`${nombreArchivo}_${hoyStr}.pdf`);
-  };
-
-  // --- LÓGICA DE LOGIN CON ROLES ---
-  const manejarLogin = (e) => {
-    e.preventDefault();
-    if (inputLogin.trim()) {
-      const input = inputLogin.trim().toUpperCase();
-      let rol = 'vendedor';
-      if (input === 'ADMIN123') rol = 'admin';
-      if (input === 'INSTALADOR01') rol = 'instalador';
-
-      const userObj = { nombre: input, rol: rol };
-      setUsuarioActual(userObj);
-      localStorage.setItem('userStilaPro', JSON.stringify(userObj));
-    }
-  };
-
-  const cerrarSesion = () => {
-    localStorage.removeItem('userStilaPro');
-    setUsuarioActual(null);
-  };
-
   // --- LÓGICA LIVE ---
   const registrarCapturaLive = async (precio) => {
     if (!clienteLive.trim() || precio <= 0) return;
-    
-    const metodo = window.prompt("Entrega: 1. Envío | 2. Local | 3. Punto Medio", "1");
-    const metodoTxt = metodo === "1" ? "Envío a domicilio" : metodo === "2" ? "Recoge en local" : "Punto medio";
-
-    let costoEnvio = 0;
-    if (metodo === "1" || metodo === "3") {
-      const cE = window.prompt("Costo de envío / entrega:", "0");
-      costoEnvio = Number(cE) || 0;
-    }
-
     const folio = `L-${Math.floor(1000 + Math.random() * 9000)}`;
     const nuevaCaptura = {
       id: Date.now(),
       cliente: clienteLive.trim().toUpperCase(),
-      precioPrenda: Number(precio),
-      envio: costoEnvio,
-      total: Number(precio) + costoEnvio,
+      precio: Number(precio),
       folio,
-      metodo: metodoTxt,
       hora: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
     };
-
     setCapturasLive([nuevaCaptura, ...capturasLive]);
-    
     try {
       await supabase.from('ventas').insert([{ 
-        total: nuevaCaptura.total, 
+        total: nuevaCaptura.precio, 
         costo_total: 0, 
-        detalles: `🔴 LIVE [${folio}]: ${nuevaCaptura.cliente} - Prenda: $${nuevaCaptura.precioPrenda} + Envío: $${nuevaCaptura.envio} (${metodoTxt})` 
+        detalles: `🔴 LIVE [${folio}]: ${nuevaCaptura.cliente} - Precio: $${nuevaCaptura.precio}` 
       }]);
       obtenerTodo();
     } catch (e) { console.error(e); }
-
     setClienteLive('');
     setPrecioLiveManual('');
     setTimeout(() => inputClienteRef.current?.focus(), 50);
-  };
-
-  const generarWhatsAppLive = (cap) => {
-    let msg = `¡Hola *${cap.cliente}*! 👋 Gracias por tu compra.\n\n`;
-    msg += `✅ *Detalle:*\n• Folio: *${cap.folio}*\n• Prenda: *$${cap.precioPrenda}*\n`;
-    if (cap.envio > 0) msg += `• Envío: *$${cap.envio}*\n`;
-    msg += `• Entrega: *${cap.metodo}*\n\n`;
-    msg += `*TOTAL A PAGAR: $${cap.total}*\n\n`;
-    msg += `Envíanos tu comprobante. ¡Tienes 24 hrs! ⏳👗`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   // --- LÓGICA DE APARTADOS ---
   const agregarApartado = (e) => {
     e.preventDefault();
     const id = Date.now();
-    const nuevo = { 
-      ...nuevoApartado, 
-      id, 
-      fecha: new Date().toISOString(),
-      estado: 'Pendiente',
-      restante: Number(nuevoApartado.total) - Number(nuevoApartado.anticipo)
-    };
+    const nuevo = { ...nuevoApartado, id, fecha: new Date().toISOString(), estado: 'Pendiente', restante: Number(nuevoApartado.total) - Number(nuevoApartado.anticipo) };
     const listaActualizada = [nuevo, ...apartados];
     setApartados(listaActualizada);
     localStorage.setItem('apartadosStilaPro', JSON.stringify(listaActualizada));
     setNuevoApartado({ cliente: '', producto: '', total: '', anticipo: '', telefono: '' });
-  };
-
-  const generarWhatsAppApartado = (ap) => {
-    let msg = `*🔖 COMPROBANTE DE APARTADO - STILA-PRO*\n`;
-    msg += `--------------------------\n`;
-    msg += `👤 Cliente: *${ap.cliente}*\n`;
-    msg += `📦 Producto: *${ap.producto}*\n`;
-    msg += `💰 Total: *$${ap.total}*\n`;
-    msg += `💵 Anticipo: *$${ap.anticipo}*\n`;
-    msg += `📉 Restante: *${ap.restante}*\n`;
-    msg += `--------------------------\n`;
-    msg += `⏳ Tiempo límite: 7 días para liquidar.\n`;
-    msg += `¡Gracias por apartar! ✨`;
-    window.open(`https://wa.me/${ap.telefono}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   const eliminarApartado = (id) => {
@@ -313,9 +234,6 @@ export default function App() {
     if (carrito.length === 0) return;
     const cliente = window.prompt("Nombre del cliente para el apartado:");
     if (!cliente) return;
-    const tel = window.prompt("Número de WhatsApp (ej. 521...):");
-    const anticipo = window.prompt("Monto del anticipo recibido:", "0");
-    if (anticipo === null) return;
     const tv = carrito.reduce((a, b) => a + b.precio, 0);
     const productosTxt = carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ');
     try {
@@ -324,7 +242,7 @@ export default function App() {
         if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
       }
       const id = Date.now();
-      const nuevo = { id, cliente: cliente.toUpperCase(), producto: productosTxt, total: tv, anticipo: Number(anticipo), telefono: tel || '', fecha: new Date().toISOString(), estado: 'Pendiente', restante: tv - Number(anticipo) };
+      const nuevo = { id, cliente: cliente.toUpperCase(), producto: productosTxt, total: tv, anticipo: 0, telefono: '', fecha: new Date().toISOString(), estado: 'Pendiente', restante: tv };
       const listaActualizada = [nuevo, ...apartados];
       setApartados(listaActualizada);
       localStorage.setItem('apartadosStilaPro', JSON.stringify(listaActualizada));
@@ -332,23 +250,10 @@ export default function App() {
       setCarrito([]);
       await obtenerTodo();
       setVista('apartados');
-      generarWhatsAppApartado(nuevo);
-    } catch (e) { alert("Error al procesar el stock del apartado"); console.error(e); }
+    } catch (e) { alert("Error al procesar el stock del apartado"); }
   }
 
   // --- LÓGICA DE NEGOCIO ---
-  const statsProveedores = useMemo(() => {
-    const stats = {};
-    inventario.forEach(p => {
-      const prov = p.proveedor || 'Sin Nombre';
-      if (!stats[prov]) stats[prov] = { stock: 0, inversion: 0, ventaEsperada: 0 };
-      stats[prov].stock += p.stock;
-      stats[prov].inversion += (p.stock * (p.costo_unitario || 0));
-      stats[prov].ventaEsperada += (p.stock * (p.precio || 0));
-    });
-    return Object.entries(stats);
-  }, [inventario]);
-
   const carritoAgrupado = useMemo(() => {
     const grupos = {};
     carrito.forEach(item => {
@@ -387,30 +292,19 @@ export default function App() {
     const nuevosCortes = [nuevoCorte, ...cortes];
     setCortes(nuevosCortes);
     localStorage.setItem('cortesStilaPro', JSON.stringify(nuevosCortes));
-    let msg = `*🏁 REPORTE CIERRE - STILA-PRO*\n📅 Fecha: ${fechaConsulta}\n👤 Responsable: *${usuarioActual.nombre}*\n--------------------------\n💰 Ventas Totales: *$${filtrados.totalV}*\n📉 Gastos Totales: *$${filtrados.totalG}*\n💵 Esperado en Caja: *$${esperado}*\n--------------------------\n✅ Efectivo Físico: *$${fisico}*\n⚖️ Diferencia: *${dif >= 0 ? '+' : ''}$${dif}*`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-    alert("Corte realizado y reporte enviado.");
+    alert("Corte realizado correctamente.");
   };
 
   async function finalizarVenta() {
     if (carrito.length === 0) return;
-    const m = window.prompt("1. Efec | 2. Trans | 3. Tarj", "1");
-    if (!m) return;
-    let mTxt = m === "1" ? "Efectivo" : m === "2" ? "Transferencia" : "Tarjeta";
     const tv = carrito.reduce((a, b) => a + b.precio, 0);
     const cv = carrito.reduce((a, b) => a + (b.costo_unitario || 0), 0);
-    const folioVenta = `TKT-${Math.floor(1000 + Math.random() * 9000)}`;
-    const hora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
     try {
-      await supabase.from('ventas').insert([{ total: tv, costo_total: cv, detalles: `🛒 [${folioVenta}] Vendedor: ${usuarioActual.nombre} | Pago: ${mTxt} | Hora: ${hora} | Productos: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') }]);
+      await supabase.from('ventas').insert([{ total: tv, costo_total: cv, detalles: `Carrito: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') }]);
       for (const item of carritoAgrupado) {
         const pDB = inventario.find(p => p.id === item.id);
         if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
       }
-      let ticketMsg = `*🛍️ TICKET DE COMPRA - STILA-PRO*\n--------------------------\n🆔 Folio: *${folioVenta}*\n👤 Vendedor: *${usuarioActual.nombre}*\n📅 Fecha: ${new Date().toLocaleDateString()} | ${hora}\n💳 Pago: *${mTxt}*\n--------------------------\n`;
-      carritoAgrupado.forEach(item => { ticketMsg += `• ${item.nombre} (x${item.cantCar}) - $${item.subtotal}\n`; });
-      ticketMsg += `--------------------------\n*TOTAL: $${tv}*\n\n¡Gracias por tu preferencia! ✨`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(ticketMsg)}`, '_blank');
       setCarrito([]); await obtenerTodo(); setVista('historial');
     } catch (e) { alert("Error al procesar la venta"); }
   }
@@ -427,16 +321,14 @@ export default function App() {
   const cardStyle = { background: theme.card, borderRadius: '15px', padding: '15px', border: `1px solid ${theme.border}`, marginBottom: '12px', color: theme.text };
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, boxSizing: 'border-box' };
   const btnClass = "btn-interactivo";
-  const btnExportStyle = { padding: '8px 12px', borderRadius: '8px', border: 'none', color: '#fff', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' };
 
   if (!usuarioActual) {
     return (
       <div style={{ backgroundColor: theme.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'sans-serif' }}>
         <div style={{ ...cardStyle, width: '100%', maxWidth: '350px', textAlign: 'center' }}>
           <h1 style={{ color: theme.accent, fontSize: '24px', marginBottom: '10px' }}>STILA-PRO ⚡</h1>
-          <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '20px' }}>Acceso de Personal</p>
           <form onSubmit={manejarLogin}>
-            <input type="password" autoFocus placeholder="Código de Acceso" value={inputLogin} onChange={e => setInputLogin(e.target.value)} style={{ ...inputStyle, textAlign: 'center', fontSize: '18px', marginBottom: '15px' }} />
+            <input autoFocus placeholder="Tu Nombre o Código" value={inputLogin} onChange={e => setInputLogin(e.target.value)} style={{ ...inputStyle, textAlign: 'center', fontSize: '18px', marginBottom: '15px' }} />
             <button className={btnClass} style={{ width: '100%', padding: '15px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold' }}>ENTRAR</button>
           </form>
         </div>
@@ -448,9 +340,9 @@ export default function App() {
     <div style={{ fontFamily: 'sans-serif', backgroundColor: theme.bg, color: theme.text, minHeight: '100vh', paddingBottom: '100px' }}>
       <header style={{ background: theme.card, padding: '10px 15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}` }}>
         <h1 style={{margin:0, fontSize:'14px'}}>STILA-PRO <span style={{color: theme.accent}}>v15</span></h1>
-        <div style={{ display:'flex', alignItems:'center', gap: '10px'}}>
-           <span style={{ fontSize: '10px', color: theme.textMuted }}>👤 {usuarioActual.nombre} ({usuarioActual.rol})</span>
-           <button onClick={cerrarSesion} style={{ background: 'none', border: 'none', color: theme.danger, fontSize: '10px' }}>SALIR</button>
+        <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+          <span style={{fontSize:'10px', color:theme.textMuted}}>👤 {usuarioActual.nombre} ({usuarioActual.rol})</span>
+          <button onClick={cerrarSesion} style={{background:'none', border:'none', color:theme.danger, fontSize:'10px'}}>SALIR</button>
         </div>
       </header>
 
@@ -470,22 +362,16 @@ export default function App() {
                 <button className={btnClass} onClick={() => registrarCapturaLive(precioLiveManual)} style={{background:theme.accent, color:'#fff', border:'none', borderRadius:'10px', padding:'0 20px'}}>OK</button>
               </div>
             </div>
-            {/* Lista live omitida por brevedad, se mantiene igual */}
           </div>
         )}
 
         {vista === 'catalogo' && usuarioActual.rol !== 'instalador' && (
           <>
-            <div style={{display: 'flex', gap: '10px', marginBottom: '15px'}}>
-              <input placeholder="🔍 Buscar..." value={busqueda} onChange={e=>setBusqueda(e.target.value)} style={{...inputStyle, flex: 1}} />
-              {usuarioActual.rol === 'admin' && (
-                <button onClick={() => exportarExcelGenerico(inventarioReal.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase())), 'Catalogo_Actual')} style={{...btnExportStyle, background: theme.excel, padding: '0 15px'}}>EXCEL</button>
-              )}
-            </div>
+            <input placeholder="🔍 Buscar..." value={busqueda} onChange={e=>setBusqueda(e.target.value)} style={{...inputStyle, marginBottom: '15px'}} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               {inventarioReal.filter(p => p.stockActual > 0 && p.nombre.toLowerCase().includes(busqueda.toLowerCase())).map(p => (
                 <div key={p.id} style={cardStyle}>
-                  <p style={{fontSize:'10px', margin:0, color: theme.textMuted}}>{p.paca || 'S/N'} / {p.proveedor || 'Sin Prov.'} / {p.stockActual} pzs</p>
+                  <p style={{fontSize:'10px', margin:0, color: theme.textMuted}}>{p.paca || 'S/N'} / {p.stockActual} pzs</p>
                   <h4 style={{margin:'5px 0', fontSize:'13px'}}>{p.nombre}</h4>
                   <p style={{fontSize:'18px', fontWeight:'bold', margin:0}}>${p.precio}</p>
                   <button className={btnClass} onClick={()=>setCarrito([...carrito, p])} style={{width:'100%', marginTop:'10px', padding:'8px', background:theme.bg, color:theme.accent, border:`1px solid ${theme.border}`, borderRadius:'8px'}}>AÑADIR</button>
@@ -497,56 +383,55 @@ export default function App() {
 
         {vista === 'apartados' && usuarioActual.rol !== 'instalador' && (
           <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            {/* Formulario y lista de apartados se mantienen idénticos */}
+            <div style={cardStyle}>
+              <h3 style={{marginTop:0, fontSize:'14px'}}>Nuevo Apartado</h3>
+              <input placeholder="Cliente" value={nuevoApartado.cliente} onChange={e=>setNuevoApartado({...nuevoApartado, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
+              <input placeholder="Producto" value={nuevoApartado.producto} onChange={e=>setNuevoApartado({...nuevoApartado, producto: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
+              <div style={{display:'flex', gap:'10px'}}>
+                <input type="number" placeholder="Total" value={nuevoApartado.total} onChange={e=>setNuevoApartado({...nuevoApartado, total: e.target.value})} style={inputStyle} />
+                <input type="number" placeholder="Anticipo" value={nuevoApartado.anticipo} onChange={e=>setNuevoApartado({...nuevoApartado, anticipo: e.target.value})} style={inputStyle} />
+              </div>
+              <button className={btnClass} onClick={agregarApartado} style={{width:'100%', marginTop:'10px', padding:'12px', background:theme.apartado, color:'#fff', border:'none', borderRadius:'10px'}}>REGISTRAR APARTADO 🔖</button>
+            </div>
+            {apartados.map(a => (
+              <div key={a.id} style={{...cardStyle, borderLeft:`5px solid ${theme.apartado}`}}>
+                <div style={{display:'flex', justifyContent:'space-between'}}>
+                  <h4 style={{margin:0}}>{a.cliente}</h4>
+                  <button onClick={()=>eliminarApartado(a.id)} style={{background:'none', border:'none', color:theme.danger}}>✕</button>
+                </div>
+                <p style={{fontSize:'12px', margin:'5px 0'}}>{a.producto}</p>
+                <div style={{display:'flex', justifyContent:'space-between', fontSize:'13px', fontWeight:'bold'}}>
+                  <span>Total: ${a.total}</span>
+                  <span style={{color:theme.accent}}>Resta: ${a.restante}</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
         {vista === 'installations' && (
           <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
-              <h2 style={{color: theme.install, fontSize: '18px', margin: 0}}>🛠️ GESTIÓN DE INSTALACIONES</h2>
-              {usuarioActual.rol !== 'instalador' && (
-                 <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{padding:'8px 15px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold', fontSize:'11px'}}>NUEVA INSTALACIÓN 🛠️</button>
-              )}
-            </div>
-            
-            {instalaciones.length === 0 && <p style={{color: theme.textMuted, textAlign:'center'}}>No hay instalaciones programadas.</p>}
+            {usuarioActual.rol !== 'instalador' && (
+              <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{width:'100%', marginBottom:'15px', padding:'15px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold'}}>PROGRAMAR INSTALACIÓN 🛠️</button>
+            )}
             {instalaciones.map(inst => (
-              <div key={inst.id} style={{...cardStyle, borderLeft: `5px solid ${inst.estado === 'Realizada' ? theme.accent : theme.install}`}}>
+              <div key={inst.id} style={{...cardStyle, borderLeft: `5px solid ${theme.install}`}}>
                 <div style={{display:'flex', justifyContent:'space-between'}}>
-                  <div>
-                    <h4 style={{margin:0}}>{inst.cliente}</h4>
-                    <p style={{margin:'5px 0', fontSize:'11px', color: theme.textMuted}}>📍 {inst.direccion}</p>
-                    <p style={{margin:0, fontSize:'11px'}}>📅 {inst.fecha} | ⏰ {inst.hora}</p>
-                    <p style={{margin:'5px 0', fontSize:'11px', fontWeight:'bold'}}>👷 Instalador: {inst.instalador}</p>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <span style={{fontSize:'10px', padding:'3px 8px', borderRadius:'10px', background: inst.estado === 'Realizada' ? theme.accent : theme.install, color: '#fff'}}>
-                      {inst.estado}
-                    </span>
-                  </div>
+                  <h4 style={{margin:0}}>{inst.cliente}</h4>
+                  <span style={{fontSize:'10px', padding:'3px 8px', borderRadius:'10px', background: inst.estado === 'Realizada' ? theme.accent : theme.install, color: '#fff'}}>{inst.estado}</span>
                 </div>
-
-                <div style={{marginTop:'15px', display:'flex', gap:'10px', alignItems:'center'}}>
-                   {inst.estado !== 'Realizada' && (
-                     <>
-                      <label style={{background: theme.bg, border: `1px solid ${theme.border}`, padding: '8px', borderRadius: '8px', fontSize: '10px', cursor: 'pointer', flex: 1, textAlign: 'center'}}>
-                        📷 SUBIR EVIDENCIA
-                        <input type="file" accept="image/*" onChange={(e) => manejarEvidencia(inst.id, e)} style={{display:'none'}} />
-                      </label>
-                      {usuarioActual.rol === 'admin' && (
-                        <button onClick={() => cambiarEstadoInst(inst.id, 'Cancelada')} style={{...btnExportStyle, background: theme.danger}}>Anular</button>
-                      )}
-                     </>
-                   )}
-                   {inst.evidencia && (
-                     <img src={inst.evidencia} alt="Evidencia" style={{width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover'}} />
-                   )}
-                   <button onClick={() => window.open(`https://wa.me/${inst.telefono}?text=Hola ${inst.cliente}, su instalación está ${inst.estado}.`)} style={{...btnExportStyle, background: '#25D366'}}>WA 📱</button>
+                <p style={{margin:'5px 0', fontSize:'12px'}}>📍 {inst.direccion}</p>
+                <p style={{margin:0, fontSize:'11px', color:theme.textMuted}}>📅 {inst.fecha} | {inst.hora}</p>
+                <div style={{marginTop:'15px', display:'flex', gap:'10px'}}>
+                   <label style={{background: theme.bg, border: `1px solid ${theme.border}`, padding: '8px', borderRadius: '8px', fontSize: '10px', cursor: 'pointer', flex: 1, textAlign: 'center'}}>
+                     📷 SUBIR EVIDENCIA
+                     <input type="file" accept="image/*" onChange={(e) => manejarEvidencia(inst.id, e)} style={{display:'none'}} />
+                   </label>
                    {usuarioActual.rol === 'admin' && (
-                     <button onClick={() => eliminarInstalacion(inst.id)} style={{background: 'none', border: 'none', color: theme.textMuted, fontSize: '12px'}}>🗑️</button>
+                    <button onClick={() => eliminarInstalacion(inst.id)} style={{background:'none', border:'none', color:theme.danger}}>🗑️</button>
                    )}
                 </div>
+                {inst.evidencia && <img src={inst.evidencia} alt="Evidencia" style={{width:'100%', marginTop:'10px', borderRadius:'10px'}} />}
               </div>
             ))}
           </div>
@@ -569,7 +454,6 @@ export default function App() {
                 <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.accent, color:'#fff', borderRadius:'10px', border:'none'}}>GUARDAR ⚡</button>
               </form>
             </div>
-            {/* Sección de estadísticas admin se mantiene igual */}
           </>
         )}
 
@@ -585,12 +469,9 @@ export default function App() {
               </div>
             ))}
             {carrito.length > 0 && (
-              <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
-                <div style={{display:'flex', gap:'10px'}}>
-                  <button className={btnClass} onClick={finalizarVenta} style={{flex: 2, padding:'15px', background:theme.accent, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>COBRAR ✅</button>
-                  <button className={btnClass} onClick={apartarDesdeCarrito} style={{flex: 1, padding:'15px', background:theme.apartado, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>APARTAR 🔖</button>
-                </div>
-                <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{width:'100%', padding:'12px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold'}}>PROGRAMAR INSTALACIÓN 🛠️</button>
+              <div style={{display:'flex', gap:'10px'}}>
+                <button className={btnClass} onClick={finalizarVenta} style={{flex: 1, padding:'15px', background:theme.accent, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>COBRAR ✅</button>
+                <button className={btnClass} onClick={apartarDesdeCarrito} style={{flex: 1, padding:'15px', background:theme.apartado, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>APARTAR 🔖</button>
               </div>
             )}
           </>
@@ -602,37 +483,29 @@ export default function App() {
               <input type="date" value={fechaConsulta} onChange={e=>setFechaConsulta(e.target.value)} style={{...inputStyle, marginBottom:'15px'}} />
               <div style={{display:'flex', justifyContent:'space-around'}}>
                 <div><p style={{margin:0, fontSize:'10px'}}>VENTAS</p><h3>${filtrados.totalV}</h3></div>
+                {/* VALIDACIÓN DE ROL PARA UTILIDAD */}
                 {usuarioActual.rol === 'admin' && (
-                   <div><p style={{margin:0, fontSize:'10px'}}>UTILIDAD</p><h3 style={{color:theme.accent}}>${filtrados.utilidad}</h3></div>
+                  <div><p style={{margin:0, fontSize:'10px'}}>UTILIDAD</p><h3 style={{color:theme.accent}}>${filtrados.utilidad}</h3></div>
                 )}
               </div>
               <button className={btnClass} onClick={realizarCorte} style={{width:'100%', marginTop:'15px', padding:'10px', background:theme.accent, borderRadius:'8px', color:'#fff', border:'none'}}>CORTE DE CAJA 🏁</button>
             </div>
-            {/* Tabla de ventas filtrada por rol */}
             <div style={cardStyle}>
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}>
-                <h3 style={{fontSize:'12px', margin:0, color:theme.textMuted}}>🧾 REGISTRO DE VENTAS</h3>
-                <div style={{display:'flex', gap:'5px'}}>
-                   <button onClick={() => exportarExcelGenerico(filtrados.vnt, 'Ventas_Dia')} style={{...btnExportStyle, background: theme.excel}}>XLS</button>
-                   <button onClick={() => exportarPDFGenerico(`VENTAS DEL DÍA ${fechaConsulta}`, ['ID', 'Detalle', 'Total'], filtrados.vnt.map(v => [v.id, v.detalles, `$${v.total}`]), 'Ventas_Dia')} style={{...btnExportStyle, background: theme.pdf}}>PDF</button>
-                </div>
-              </div>
+              <h3 style={{fontSize:'12px', margin:'0 0 10px 0', color:theme.textMuted}}>🧾 REGISTRO DE VENTAS</h3>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%', fontSize:'10px', borderCollapse:'collapse'}}>
                   <thead>
                     <tr style={{borderBottom:`1px solid ${theme.border}`, color:theme.textMuted}}>
-                      <th style={{textAlign:'left', padding:'5px'}}>Hora / Folio</th>
-                      <th style={{textAlign:'left', padding:'5px'}}>Vendedor / Pago</th>
-                      <th style={{textAlign:'left', padding:'5px'}}>Detalle Productos</th>
+                      <th style={{textAlign:'left', padding:'5px'}}>Hora</th>
+                      <th style={{textAlign:'left', padding:'5px'}}>Detalles</th>
                       <th style={{textAlign:'right', padding:'5px'}}>Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtrados.vnt.map((v) => (
                       <tr key={v.id} style={{borderBottom:`1px solid ${theme.border}`}}>
-                        <td style={{padding:'5px', verticalAlign:'top'}}>{new Date(v.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}<br/><span style={{fontSize:'8px', opacity:0.7}}>{v.detalles?.match(/\[(.*?)\]/)?.[1] || 'S/F'}</span></td>
-                        <td style={{padding:'5px', verticalAlign:'top'}}><span style={{color:theme.accent}}>{v.detalles?.match(/Vendedor: (.*?) \|/)?.[1] || 'LIVE'}</span><br/>{v.detalles?.match(/Pago: (.*?) \|/)?.[1] || 'Efectivo'}</td>
-                        <td style={{padding:'5px', fontSize:'9px', maxWidth:'150px'}}>{v.detalles?.split('Productos: ')[1] || v.detalles}</td>
+                        <td style={{padding:'5px'}}>{new Date(v.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                        <td style={{padding:'5px', fontSize:'9px'}}>{v.detalles}</td>
                         <td style={{textAlign:'right', padding:'5px', fontWeight:'bold'}}>${v.total}</td>
                       </tr>
                     ))}
@@ -644,8 +517,10 @@ export default function App() {
         )}
       </main>
 
+      {/* --- NAVEGACIÓN MODIFICADA SEGÚN ROLES --- */}
       <nav style={{ position: 'fixed', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', padding: '12px', borderRadius: '20px', zIndex: 100 }}>
         
+        {/* Vistas para Vendedores y Admin */}
         {usuarioActual.rol !== 'instalador' && (
           <>
             <button className={btnClass} onClick={()=>setVista('catalogo')} style={{background: vista==='catalogo'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
@@ -663,19 +538,22 @@ export default function App() {
             </button>
           </>
         )}
-
+        
+        {/* Vista para Todos */}
         <button className={btnClass} onClick={()=>setVista('installations')} style={{background: vista==='installations'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>🛠️</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Instal.</span>
         </button>
 
+        {/* Vista Solo Admin */}
         {usuarioActual.rol === 'admin' && (
           <button className={btnClass} onClick={()=>setVista('admin')} style={{background: vista==='admin'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
             <span style={{fontSize:'22px'}}>⚡</span>
             <span style={{fontSize:'9px', color: theme.textMuted}}>Admin</span>
           </button>
         )}
-
+        
+        {/* Vista Corte (Vendedores y Admin) */}
         {usuarioActual.rol !== 'instalador' && (
           <button className={btnClass} onClick={()=>setVista('historial')} style={{background: vista==='historial'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
             <span style={{fontSize:'22px'}}>📈</span>
@@ -689,6 +567,26 @@ export default function App() {
         .btn-interactivo { transition: transform 0.1s active; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .btn-interactivo:active { transform: scale(0.95); }
       `}</style>
+
+      {/* MODAL INSTALACIÓN */}
+      {mostrarModalInstalacion && (
+        <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.8)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px'}}>
+          <div style={{...cardStyle, width:'100%', maxWidth:'400px'}}>
+            <h3 style={{marginTop:0}}>Programar Instalación</h3>
+            <form onSubmit={guardarInstalacion}>
+              <input placeholder="Cliente" value={nuevaInst.cliente} onChange={e=>setNuevaInst({...nuevaInst, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+              <input placeholder="Dirección" value={nuevaInst.direccion} onChange={e=>setNuevaInst({...nuevaInst, direccion: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+              <div style={{display:'flex', gap:'10px', marginBottom:'10px'}}>
+                <input type="date" value={nuevaInst.fecha} onChange={e=>setNuevaInst({...nuevaInst, fecha: e.target.value})} style={inputStyle} required />
+                <input type="time" value={nuevaInst.hora} onChange={e=>setNuevaInst({...nuevaInst, hora: e.target.value})} style={inputStyle} required />
+              </div>
+              <input placeholder="Instalador" value={nuevaInst.instalador} onChange={e=>setNuevaInst({...nuevaInst, instalador: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+              <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.install, color:'#fff', border:'none', borderRadius:'10px', fontWeight:'bold'}}>GUARDAR 🛠️</button>
+              <button type="button" onClick={()=>setMostrarModalInstalacion(false)} style={{width:'100%', marginTop:'10px', background:'none', color:theme.textMuted, border:'none'}}>Cancelar</button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
