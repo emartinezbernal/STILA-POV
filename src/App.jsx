@@ -578,7 +578,7 @@ export default function App() {
             <div style={cardStyle}>
               <form onSubmit={guardarTurbo}>
                 <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
-                  <input placeholder="# Lote" value={infoPaca.numero} onChange={e=>setInfoPaca({...infoPaca, numero: e.target.value})} style={inputStyle}/>
+                  <input placeholder="# Paca" value={infoPaca.numero} onChange={e=>setInfoPaca({...infoPaca, numero: e.target.value})} style={inputStyle}/>
                   <input placeholder="Prov." value={infoPaca.proveedor} onChange={e=>setInfoPaca({...infoPaca, proveedor: e.target.value})} style={inputStyle}/>
                 </div>
                 <input ref={inputNombreRef} placeholder="Nombre" value={nuevoProd.nombre} onChange={e=>setNuevoProd({...nuevoProd, nombre: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
@@ -769,7 +769,7 @@ export default function App() {
           <span style={{fontSize:'22px'}}>🔖</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Apartar</span>
         </button>
-        {/* NUEVO BOTÓN NAVEGACIÓN *//*}
+        {/* NUEVO BOTÓN NAVEGACIÓN */}
         <button className={btnClass} onClick={()=>setVista('installations')} style={{background: vista==='installations'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>🛠️</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Instal.</span>
