@@ -371,25 +371,58 @@ export default function App() {
 
   async function finalizarVenta() {
     if (carrito.length === 0) return;
+    
+    // 1. Método de pago
     const m = window.prompt("1. Efec | 2. Trans | 3. Tarj", "1");
     if (!m) return;
     let mTxt = m === "1" ? "Efectivo" : m === "2" ? "Transferencia" : "Tarjeta";
+    
+    // 2. Método de envío de ticket (Cuestionario)
+    const envioTicket = window.prompt("Enviar ticket: 1. WhatsApp | 2. Email | 3. No enviar", "3");
+    let contactoDestino = "";
+    if (envioTicket === "1") {
+      contactoDestino = window.prompt("Número de WhatsApp (ej. 521...):") || "";
+    } else if (envioTicket === "2") {
+      contactoDestino = window.prompt("Correo electrónico del cliente:") || "";
+    }
+
     const tv = carrito.reduce((a, b) => a + b.precio, 0);
     const cv = carrito.reduce((a, b) => a + (b.costo_unitario || 0), 0);
     const folioVenta = `TKT-${Math.floor(1000 + Math.random() * 9000)}`;
     const hora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    
     try {
-      await supabase.from('ventas').insert([{ total: tv, costo_total: cv, detalles: `🛒 [${folioVenta}] Vendedor: ${usuarioActual} | Pago: ${mTxt} | Hora: ${hora} | Productos: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') }]);
+      // 3. Registro en Base de Datos (No se interfiere si se envían mensajes)
+      await supabase.from('ventas').insert([{ 
+        total: tv, 
+        costo_total: cv, 
+        detalles: `🛒 [${folioVenta}] Vendedor: ${usuarioActual} | Pago: ${mTxt} | Hora: ${hora} | Productos: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') 
+      }]);
+      
       for (const item of carritoAgrupado) {
         const pDB = inventario.find(p => p.id === item.id);
         if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
       }
+      
+      // 4. Formatear el Ticket
       let ticketMsg = `*🛍️ TICKET DE COMPRA - STILA-PRO*\n--------------------------\n🆔 Folio: *${folioVenta}*\n👤 Vendedor: *${usuarioActual}*\n📅 Fecha: ${new Date().toLocaleDateString()} | ${hora}\n💳 Pago: *${mTxt}*\n--------------------------\n`;
       carritoAgrupado.forEach(item => { ticketMsg += `• ${item.nombre} (x${item.cantCar}) - $${item.subtotal}\n`; });
       ticketMsg += `--------------------------\n*TOTAL: $${tv}*\n\n¡Gracias por tu preferencia! ✨`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(ticketMsg)}`, '_blank');
-      setCarrito([]); await obtenerTodo(); setVista('historial');
-    } catch (e) { alert("Error al procesar la venta"); }
+      
+      // 5. Envío automático según selección
+      if (envioTicket === "1") {
+        window.open(`https://wa.me/${contactoDestino}?text=${encodeURIComponent(ticketMsg)}`, '_blank');
+      } else if (envioTicket === "2" && contactoDestino) {
+        const emailBody = ticketMsg.replace(/\*/g, ''); // Quitamos asteriscos para que el email se vea limpio
+        window.open(`mailto:${contactoDestino}?subject=Ticket de Compra - STILA-PRO&body=${encodeURIComponent(emailBody)}`, '_blank');
+      }
+
+      setCarrito([]); 
+      await obtenerTodo(); 
+      setVista('historial');
+    } catch (e) { 
+      alert("Error al procesar la venta"); 
+    }
   }
 
   async function guardarTurbo(e) {
@@ -636,7 +669,7 @@ export default function App() {
             </div>
             {carritoAgrupado.map((item) => (
               <div key={item.id} style={{...cardStyle, display:'flex', justifyContent:'space-between'}}>
-                <div>{item.nombre} x{item.cantCar}</div>
+                <div>{item.nombre} x{item.cantCar} - ${item.subtotal}</div>
                 <button className={btnClass} onClick={() => setCarrito(carrito.filter(p => p.id !== item.id))} style={{color:theme.danger, background:'none', border:'none'}}>Quitar</button>
               </div>
             ))}
