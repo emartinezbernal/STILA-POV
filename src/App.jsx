@@ -578,7 +578,7 @@ export default function App() {
             <div style={cardStyle}>
               <form onSubmit={guardarTurbo}>
                 <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
-                  <input placeholder="# Paca" value={infoPaca.numero} onChange={e=>setInfoPaca({...infoPaca, numero: e.target.value})} style={inputStyle}/>
+                  <input placeholder="# Lote" value={infoPaca.numero} onChange={e=>setInfoPaca({...infoPaca, numero: e.target.value})} style={inputStyle}/>
                   <input placeholder="Prov." value={infoPaca.proveedor} onChange={e=>setInfoPaca({...infoPaca, proveedor: e.target.value})} style={inputStyle}/>
                 </div>
                 <input ref={inputNombreRef} placeholder="Nombre" value={nuevoProd.nombre} onChange={e=>setNuevoProd({...nuevoProd, nombre: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
@@ -792,3 +792,4 @@ export default function App() {
     </div>
   );
 }
+
