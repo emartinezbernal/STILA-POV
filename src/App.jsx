@@ -534,7 +534,11 @@ export default function App() {
         {/* --- NUEVA VISTA: INSTALACIONES --- */}
         {vista === 'installations' && (
           <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            <h2 style={{color: theme.install, fontSize: '18px', marginBottom: '15px'}}>🛠️ GESTIÓN DE INSTALACIONES</h2>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
+              <h2 style={{color: theme.install, fontSize: '18px', margin: 0}}>🛠️ GESTIÓN DE INSTALACIONES</h2>
+              <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{padding:'8px 15px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold', fontSize:'11px'}}>NUEVA INSTALACIÓN 🛠️</button>
+            </div>
+            
             {instalaciones.length === 0 && <p style={{color: theme.textMuted, textAlign:'center'}}>No hay instalaciones programadas.</p>}
             {instalaciones.map(inst => (
               <div key={inst.id} style={{...cardStyle, borderLeft: `5px solid ${inst.estado === 'Realizada' ? theme.accent : theme.install}`}}>
@@ -581,7 +585,7 @@ export default function App() {
                   <input placeholder="# Lote" value={infoPaca.numero} onChange={e=>setInfoPaca({...infoPaca, numero: e.target.value})} style={inputStyle}/>
                   <input placeholder="Prov." value={infoPaca.proveedor} onChange={e=>setInfoPaca({...infoPaca, proveedor: e.target.value})} style={inputStyle}/>
                 </div>
-                <input ref={inputNombreRef} placeholder="Artículo/Descripción" value={nuevoProd.nombre} onChange={e=>setNuevoProd({...nuevoProd, nombre: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+                <input ref={inputNombreRef} placeholder="Nombre" value={nuevoProd.nombre} onChange={e=>setNuevoProd({...nuevoProd, nombre: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
                 <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
                   <input type="number" placeholder="Costo" value={nuevoProd.costo} onChange={e=>setNuevoProd({...nuevoProd, costo: e.target.value})} style={inputStyle} required />
                   <input type="number" placeholder="Venta" value={nuevoProd.precio} onChange={e=>setNuevoProd({...nuevoProd, precio: e.target.value})} style={inputStyle} required />
@@ -594,7 +598,7 @@ export default function App() {
                <h3 style={{fontSize:'12px', margin:'0 0 10px 0', color:theme.excel}}>📦 EXPORTAR INVENTARIO TOTAL</h3>
                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
                   <button onClick={() => exportarExcelGenerico(inventario, 'Inventario_Completo')} style={{...btnExportStyle, background: theme.excel, justifyContent:'center'}}>EXCEL</button>
-                  <button onClick={() => exportarPDFGenerico('INVENTARIO COMPLETO', ['Nombre', 'Paca', 'Costo', 'Venta', 'Stock'], inventario.map(p => [p.nombre, p.paca, `$${p.costo_unitario}`, `$${p.precio}`, p.stock]), 'Inventario_Completo')} style={{...btnExportStyle, background: theme.pdf, justifyContent:'center'}}>PDF</button>
+                  <button onClick={() => exportarPDFGenerico('INVENTARIO COMPLETO', ['Nombre', 'Lote', 'Costo', 'Venta', 'Stock'], inventario.map(p => [p.nombre, p.paca, `$${p.costo_unitario}`, `$${p.precio}`, p.stock]), 'Inventario_Completo')} style={{...btnExportStyle, background: theme.pdf, justifyContent:'center'}}>PDF</button>
                </div>
             </div>
             <div style={cardStyle}>
@@ -646,30 +650,30 @@ export default function App() {
                 <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{width:'100%', padding:'12px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold'}}>PROGRAMAR INSTALACIÓN 🛠️</button>
               </div>
             )}
-
-            {/* MODAL DE INSTALACIÓN */}
-            {mostrarModalInstalacion && (
-              <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.8)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px'}}>
-                <div style={{...cardStyle, maxWidth:'400px', width:'100%'}}>
-                  <h3 style={{marginTop:0, color: theme.install}}>ORDEN DE INSTALACIÓN</h3>
-                  <form onSubmit={guardarInstalacion}>
-                    <input placeholder="Cliente" value={nuevaInst.cliente} onChange={e=>setNuevaInst({...nuevaInst, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
-                    <input placeholder="Dirección de Instalación" value={nuevaInst.direccion} onChange={e=>setNuevaInst({...nuevaInst, direccion: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
-                    <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
-                      <input type="date" value={nuevaInst.fecha} onChange={e=>setNuevaInst({...nuevaInst, fecha: e.target.value})} style={inputStyle} required />
-                      <input type="time" value={nuevaInst.hora} onChange={e=>setNuevaInst({...nuevaInst, hora: e.target.value})} style={inputStyle} required />
-                    </div>
-                    <input placeholder="WhatsApp Cliente" value={nuevaInst.telefono} onChange={e=>setNuevaInst({...nuevaInst, telefono: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
-                    <input placeholder="Nombre del Instalador" value={nuevaInst.instalador} onChange={e=>setNuevaInst({...nuevaInst, instalador: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
-                    <div style={{display:'flex', gap:'10px'}}>
-                      <button type="button" onClick={()=>setMostrarModalInstalacion(false)} style={{...inputStyle, background: theme.bg, flex:1}}>Cancelar</button>
-                      <button type="submit" style={{...inputStyle, background: theme.install, color:'#fff', border:'none', flex:1, fontWeight:'bold'}}>AGENDAR</button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
           </>
+        )}
+
+        {/* MODAL DE INSTALACIÓN (Se usa en Ventas e Instalaciones) */}
+        {mostrarModalInstalacion && (
+          <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.8)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px'}}>
+            <div style={{...cardStyle, maxWidth:'400px', width:'100%'}}>
+              <h3 style={{marginTop:0, color: theme.install}}>ORDEN DE INSTALACIÓN</h3>
+              <form onSubmit={guardarInstalacion}>
+                <input placeholder="Cliente" value={nuevaInst.cliente} onChange={e=>setNuevaInst({...nuevaInst, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+                <input placeholder="Dirección de Instalación" value={nuevaInst.direccion} onChange={e=>setNuevaInst({...nuevaInst, direccion: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+                <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
+                  <input type="date" value={nuevaInst.fecha} onChange={e=>setNuevaInst({...nuevaInst, fecha: e.target.value})} style={inputStyle} required />
+                  <input type="time" value={nuevaInst.hora} onChange={e=>setNuevaInst({...nuevaInst, hora: e.target.value})} style={inputStyle} required />
+                </div>
+                <input placeholder="WhatsApp Cliente" value={nuevaInst.telefono} onChange={e=>setNuevaInst({...nuevaInst, telefono: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
+                <input placeholder="Nombre del Instalador" value={nuevaInst.instalador} onChange={e=>setNuevaInst({...nuevaInst, instalador: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+                <div style={{display:'flex', gap:'10px'}}>
+                  <button type="button" onClick={()=>setMostrarModalInstalacion(false)} style={{...inputStyle, background: theme.bg, flex:1}}>Cancelar</button>
+                  <button type="submit" style={{...inputStyle, background: theme.install, color:'#fff', border:'none', flex:1, fontWeight:'bold'}}>AGENDAR</button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
 
         {vista === 'historial' && (
@@ -737,7 +741,7 @@ export default function App() {
                         <td style={{padding:'5px'}}>{c.timestamp.split(', ')[1]}</td>
                         <td style={{padding:'5px'}}>{c.responsable}</td>
                         <td style={{textAlign:'right', padding:'5px'}}>${c.reportado}</td>
-                        <td style={{textAlign:'right', padding:'5px', color: c.diferencia < 0 ? theme.danger : theme.accent}}>{c.diferencia >= 0 ? '+' : ''}${c.diferencia}</td>
+                        <td style={{textAlign:'right', padding:'5px', color: c.diferencia < 0 ? theme.danger : theme.accent}}>{c.diferencia >= 0 ? '+' : ''}$${c.diferencia}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -749,13 +753,6 @@ export default function App() {
       </main>
 
       <nav style={{ position: 'fixed', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', padding: '12px', borderRadius: '20px', zIndex: 100 }}>
-        {/* ICONO LIVE OCULTO PARA USO FUTURO */}
-        {/* <button className={btnClass} onClick={()=>setVista('live')} style={{background: vista==='live'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
-          <span style={{fontSize:'22px'}}>🔴</span>
-          <span style={{fontSize:'9px', color: theme.textMuted}}>Live</span>
-        </button> 
-        */}
-        
         <button className={btnClass} onClick={()=>setVista('catalogo')} style={{background: vista==='catalogo'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>📦</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Stock</span>
@@ -792,6 +789,3 @@ export default function App() {
     </div>
   );
 }
-
-
-
