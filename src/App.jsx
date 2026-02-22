@@ -18,7 +18,8 @@ const theme = {
   live: '#eab308',
   pdf: '#e11d48',
   excel: '#16a34a',
-  apartado: '#8b5cf6' // Color para el nuevo módulo
+  apartado: '#8b5cf6',
+  install: '#3b82f6' // Nuevo color para instalaciones
 };
 
 export default function App() {
@@ -44,6 +45,13 @@ export default function App() {
   const [apartados, setApartados] = useState([]);
   const [nuevoApartado, setNuevoApartado] = useState({ cliente: '', producto: '', total: '', anticipo: '', telefono: '' });
   const TIEMPO_LIMITE_HS = 168; // 7 días * 24 horas
+
+  // --- NUEVOS ESTADOS INSTALACIONES ---
+  const [instalaciones, setInstalaciones] = useState([]);
+  const [mostrarModalInstalacion, setMostrarModalInstalacion] = useState(false);
+  const [nuevaInst, setNuevaInst] = useState({ 
+    cliente: '', direccion: '', fecha: '', hora: '', instalador: '', telefono: '', notas: '' 
+  });
   
   const obtenerFechaLocal = () => {
     const d = new Date();
@@ -66,11 +74,13 @@ export default function App() {
       const cortesGuardados = localStorage.getItem('cortesStilaPro');
       if (cortesGuardados) setCortes(JSON.parse(cortesGuardados));
       
-      // Cargar apartados locales
       const apartadosGuardados = localStorage.getItem('apartadosStilaPro');
       if (apartadosGuardados) setApartados(JSON.parse(apartadosGuardados));
 
-      // CARGAR LIBRERÍAS DE EXPORTACIÓN DINÁMICAMENTE
+      // Cargar instalaciones
+      const instGuardadas = localStorage.getItem('instStilaPro');
+      if (instGuardadas) setInstalaciones(JSON.parse(instGuardadas));
+
       if (!window.XLSX) {
         const sExcel = document.createElement("script");
         sExcel.src = "https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js";
@@ -95,6 +105,55 @@ export default function App() {
     const { data: g } = await supabase.from('gastos').select('*').order('created_at', { ascending: false });
     if (g) setGastos(g);
   }
+
+  // --- LÓGICA INSTALACIONES ---
+  const guardarInstalacion = (e) => {
+    e.preventDefault();
+    const id = Date.now();
+    const nueva = { 
+      ...nuevaInst, 
+      id, 
+      estado: 'En proceso', 
+      evidencia: null,
+      creadoPor: usuarioActual 
+    };
+    const lista = [nueva, ...instalaciones];
+    setInstalaciones(lista);
+    localStorage.setItem('instStilaPro', JSON.stringify(lista));
+    setMostrarModalInstalacion(false);
+    setNuevaInst({ cliente: '', direccion: '', fecha: '', hora: '', instalador: '', telefono: '', notas: '' });
+    alert("Instalación programada correctamente.");
+  };
+
+  const manejarEvidencia = (id, e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const lista = instalaciones.map(inst => 
+          inst.id === id ? { ...inst, evidencia: reader.result, estado: 'Realizada' } : inst
+        );
+        setInstalaciones(lista);
+        localStorage.setItem('instStilaPro', JSON.stringify(lista));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const cambiarEstadoInst = (id, nuevoEstado) => {
+    const lista = instalaciones.map(inst => 
+      inst.id === id ? { ...inst, estado: nuevoEstado } : inst
+    );
+    setInstalaciones(lista);
+    localStorage.setItem('instStilaPro', JSON.stringify(lista));
+  };
+
+  const eliminarInstalacion = (id) => {
+    if(!window.confirm("¿Eliminar registro de instalación?")) return;
+    const lista = instalaciones.filter(i => i.id !== id);
+    setInstalaciones(lista);
+    localStorage.setItem('instStilaPro', JSON.stringify(lista));
+  };
 
   // --- FUNCIONES DE EXPORTACIÓN ---
   const exportarExcelGenerico = (datos, nombreArchivo) => {
@@ -227,59 +286,31 @@ export default function App() {
     localStorage.setItem('apartadosStilaPro', JSON.stringify(filtrados));
   };
 
-  // APARTAR DESDE CARRITO AFECTANDO STOCK
   async function apartarDesdeCarrito() {
     if (carrito.length === 0) return;
-    
     const cliente = window.prompt("Nombre del cliente para el apartado:");
     if (!cliente) return;
-    
     const tel = window.prompt("Número de WhatsApp (ej. 521...):");
     const anticipo = window.prompt("Monto del anticipo recibido:", "0");
     if (anticipo === null) return;
-
     const tv = carrito.reduce((a, b) => a + b.precio, 0);
     const productosTxt = carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ');
-
     try {
-      // 1. Afectar Inventario en Supabase
       for (const item of carritoAgrupado) {
         const pDB = inventario.find(p => p.id === item.id);
-        if (pDB) {
-          await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
-        }
+        if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
       }
-
-      // 2. Registrar en la lista de apartados
       const id = Date.now();
-      const nuevo = {
-        id,
-        cliente: cliente.toUpperCase(),
-        producto: productosTxt,
-        total: tv,
-        anticipo: Number(anticipo),
-        telefono: tel || '',
-        fecha: new Date().toISOString(),
-        estado: 'Pendiente',
-        restante: tv - Number(anticipo)
-      };
-
+      const nuevo = { id, cliente: cliente.toUpperCase(), producto: productosTxt, total: tv, anticipo: Number(anticipo), telefono: tel || '', fecha: new Date().toISOString(), estado: 'Pendiente', restante: tv - Number(anticipo) };
       const listaActualizada = [nuevo, ...apartados];
       setApartados(listaActualizada);
       localStorage.setItem('apartadosStilaPro', JSON.stringify(listaActualizada));
-
-      // 3. Limpiar y refrescar
       alert("Apartado registrado y stock descontado.");
       setCarrito([]);
       await obtenerTodo();
       setVista('apartados');
-      
       generarWhatsAppApartado(nuevo);
-
-    } catch (e) {
-      alert("Error al procesar el stock del apartado");
-      console.error(e);
-    }
+    } catch (e) { alert("Error al procesar el stock del apartado"); console.error(e); }
   }
 
   // --- LÓGICA DE NEGOCIO ---
@@ -325,36 +356,15 @@ export default function App() {
   const realizarCorte = () => {
     const f = window.prompt(`¿Efectivo físico en caja?`);
     if (f === null) return;
-    
     const fisico = Number(f);
     const esperado = filtrados.totalV - filtrados.totalG;
     const dif = fisico - esperado;
     const timestamp = new Date().toLocaleString();
-    
-    const nuevoCorte = { 
-        id: Date.now(), 
-        fechaFiltro: fechaConsulta, 
-        timestamp, 
-        reportado: fisico, 
-        diferencia: dif,
-        responsable: usuarioActual 
-    };
-
+    const nuevoCorte = { id: Date.now(), fechaFiltro: fechaConsulta, timestamp, reportado: fisico, diferencia: dif, responsable: usuarioActual };
     const nuevosCortes = [nuevoCorte, ...cortes];
     setCortes(nuevosCortes);
     localStorage.setItem('cortesStilaPro', JSON.stringify(nuevosCortes));
-
-    let msg = `*🏁 REPORTE CIERRE - STILA-PRO*\n`;
-    msg += `📅 Fecha: ${fechaConsulta}\n`;
-    msg += `👤 Responsable: *${usuarioActual}*\n`;
-    msg += `--------------------------\n`;
-    msg += `💰 Ventas Totales: *$${filtrados.totalV}*\n`;
-    msg += `📉 Gastos Totales: *$${filtrados.totalG}*\n`;
-    msg += `💵 Esperado en Caja: *$${esperado}*\n`;
-    msg += `--------------------------\n`;
-    msg += `✅ Efectivo Físico: *$${fisico}*\n`;
-    msg += `⚖️ Diferencia: *${dif >= 0 ? '+' : ''}$${dif}*`;
-
+    let msg = `*🏁 REPORTE CIERRE - STILA-PRO*\n📅 Fecha: ${fechaConsulta}\n👤 Responsable: *${usuarioActual}*\n--------------------------\n💰 Ventas Totales: *$${filtrados.totalV}*\n📉 Gastos Totales: *$${filtrados.totalG}*\n💵 Esperado en Caja: *$${esperado}*\n--------------------------\n✅ Efectivo Físico: *$${fisico}*\n⚖️ Diferencia: *${dif >= 0 ? '+' : ''}$${dif}*`;
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
     alert("Corte realizado y reporte enviado.");
   };
@@ -364,43 +374,21 @@ export default function App() {
     const m = window.prompt("1. Efec | 2. Trans | 3. Tarj", "1");
     if (!m) return;
     let mTxt = m === "1" ? "Efectivo" : m === "2" ? "Transferencia" : "Tarjeta";
-    
     const tv = carrito.reduce((a, b) => a + b.precio, 0);
     const cv = carrito.reduce((a, b) => a + (b.costo_unitario || 0), 0);
     const folioVenta = `TKT-${Math.floor(1000 + Math.random() * 9000)}`;
     const hora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-
     try {
-      await supabase.from('ventas').insert([{ 
-        total: tv, 
-        costo_total: cv, 
-        detalles: `🛒 [${folioVenta}] Vendedor: ${usuarioActual} | Pago: ${mTxt} | Hora: ${hora} | Productos: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') 
-      }]);
-
+      await supabase.from('ventas').insert([{ total: tv, costo_total: cv, detalles: `🛒 [${folioVenta}] Vendedor: ${usuarioActual} | Pago: ${mTxt} | Hora: ${hora} | Productos: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') }]);
       for (const item of carritoAgrupado) {
         const pDB = inventario.find(p => p.id === item.id);
         if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
       }
-
-      let ticketMsg = `*🛍️ TICKET DE COMPRA - STILA-PRO*\n`;
-      ticketMsg += `--------------------------\n`;
-      ticketMsg += `🆔 Folio: *${folioVenta}*\n`;
-      ticketMsg += `👤 Vendedor: *${usuarioActual}*\n`;
-      ticketMsg += `📅 Fecha: ${new Date().toLocaleDateString()} | ${hora}\n`;
-      ticketMsg += `💳 Pago: *${mTxt}*\n`;
-      ticketMsg += `--------------------------\n`;
-      carritoAgrupado.forEach(item => {
-        ticketMsg += `• ${item.nombre} (x${item.cantCar}) - $${item.subtotal}\n`;
-      });
-      ticketMsg += `--------------------------\n`;
-      ticketMsg += `*TOTAL: $${tv}*\n\n`;
-      ticketMsg += `¡Gracias por tu preferencia! ✨`;
-
+      let ticketMsg = `*🛍️ TICKET DE COMPRA - STILA-PRO*\n--------------------------\n🆔 Folio: *${folioVenta}*\n👤 Vendedor: *${usuarioActual}*\n📅 Fecha: ${new Date().toLocaleDateString()} | ${hora}\n💳 Pago: *${mTxt}*\n--------------------------\n`;
+      carritoAgrupado.forEach(item => { ticketMsg += `• ${item.nombre} (x${item.cantCar}) - $${item.subtotal}\n`; });
+      ticketMsg += `--------------------------\n*TOTAL: $${tv}*\n\n¡Gracias por tu preferencia! ✨`;
       window.open(`https://wa.me/?text=${encodeURIComponent(ticketMsg)}`, '_blank');
-
-      setCarrito([]); 
-      await obtenerTodo(); 
-      setVista('historial');
+      setCarrito([]); await obtenerTodo(); setVista('historial');
     } catch (e) { alert("Error al procesar la venta"); }
   }
 
@@ -418,7 +406,6 @@ export default function App() {
   const btnClass = "btn-interactivo";
   const btnExportStyle = { padding: '8px 12px', borderRadius: '8px', border: 'none', color: '#fff', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' };
 
-  // --- PANTALLA LOGIN ---
   if (!usuarioActual) {
     return (
       <div style={{ backgroundColor: theme.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'sans-serif' }}>
@@ -426,13 +413,7 @@ export default function App() {
           <h1 style={{ color: theme.accent, fontSize: '24px', marginBottom: '10px' }}>STILA-PRO ⚡</h1>
           <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '20px' }}>Ingresa tu nombre para comenzar</p>
           <form onSubmit={manejarLogin}>
-            <input 
-              autoFocus
-              placeholder="Nombre de Usuario" 
-              value={inputLogin} 
-              onChange={e => setInputLogin(e.target.value)} 
-              style={{ ...inputStyle, textAlign: 'center', fontSize: '18px', marginBottom: '15px' }} 
-            />
+            <input autoFocus placeholder="Nombre de Usuario" value={inputLogin} onChange={e => setInputLogin(e.target.value)} style={{ ...inputStyle, textAlign: 'center', fontSize: '18px', marginBottom: '15px' }} />
             <button className={btnClass} style={{ width: '100%', padding: '15px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold' }}>ENTRAR</button>
           </form>
         </div>
@@ -466,7 +447,6 @@ export default function App() {
                 <button className={btnClass} onClick={() => registrarCapturaLive(precioLiveManual)} style={{background:theme.accent, color:'#fff', border:'none', borderRadius:'10px', padding:'0 20px'}}>OK</button>
               </div>
             </div>
-
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}>
               <h3 style={{fontSize:'12px', color:theme.textMuted, margin:0}}>ÚLTIMAS ASIGNACIONES</h3>
               <div style={{display:'flex', gap:'5px'}}>
@@ -474,7 +454,6 @@ export default function App() {
                 <button onClick={() => exportarPDFGenerico('ASIGNACIONES LIVE', ['Cliente', 'Folio', 'Metodo', 'Total'], capturasLive.map(c => [c.cliente, c.folio, c.metodo, `$${c.total}`]), 'Live_Capturas')} style={{...btnExportStyle, background: theme.pdf}}>PDF</button>
               </div>
             </div>
-
             {capturasLive.map((cap) => (
               <div key={cap.id} style={cardStyle}>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
@@ -499,19 +478,12 @@ export default function App() {
           <>
             <div style={{display: 'flex', gap: '10px', marginBottom: '15px'}}>
               <input placeholder="🔍 Buscar..." value={busqueda} onChange={e=>setBusqueda(e.target.value)} style={{...inputStyle, flex: 1}} />
-              <button 
-                onClick={() => exportarExcelGenerico(inventarioReal.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase())), 'Catalogo_Actual')} 
-                style={{...btnExportStyle, background: theme.excel, padding: '0 15px'}}
-              >
-                EXCEL
-              </button>
+              <button onClick={() => exportarExcelGenerico(inventarioReal.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase())), 'Catalogo_Actual')} style={{...btnExportStyle, background: theme.excel, padding: '0 15px'}}>EXCEL</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               {inventarioReal.filter(p => p.stockActual > 0 && p.nombre.toLowerCase().includes(busqueda.toLowerCase())).map(p => (
                 <div key={p.id} style={cardStyle}>
-                  <p style={{fontSize:'10px', margin:0, color: theme.textMuted}}>
-                    {p.paca || 'S/N'} / {p.proveedor || 'Sin Prov.'} / {p.stockActual} pzs
-                  </p>
+                  <p style={{fontSize:'10px', margin:0, color: theme.textMuted}}>{p.paca || 'S/N'} / {p.proveedor || 'Sin Prov.'} / {p.stockActual} pzs</p>
                   <h4 style={{margin:'5px 0', fontSize:'13px'}}>{p.nombre}</h4>
                   <p style={{fontSize:'18px', fontWeight:'bold', margin:0}}>${p.precio}</p>
                   <button className={btnClass} onClick={()=>setCarrito([...carrito, p])} style={{width:'100%', marginTop:'10px', padding:'8px', background:theme.bg, color:theme.accent, border:`1px solid ${theme.border}`, borderRadius:'8px'}}>AÑADIR</button>
@@ -536,12 +508,10 @@ export default function App() {
                 <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.apartado, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold'}}>CREAR APARTADO</button>
               </form>
             </div>
-
             <h3 style={{fontSize:'12px', color:theme.textMuted, marginBottom:'10px'}}>CONTROL DE APARTADOS</h3>
             {apartados.map(ap => {
               const horasTranscurridas = (Date.now() - ap.id) / (1000 * 60 * 60);
               const esVencido = horasTranscurridas > TIEMPO_LIMITE_HS;
-              
               return (
                 <div key={ap.id} style={{...cardStyle, border: esVencido ? `1px solid ${theme.danger}` : `1px solid ${theme.border}`}}>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
@@ -558,6 +528,48 @@ export default function App() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* --- NUEVA VISTA: INSTALACIONES --- */}
+        {vista === 'installations' && (
+          <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            <h2 style={{color: theme.install, fontSize: '18px', marginBottom: '15px'}}>🛠️ GESTIÓN DE INSTALACIONES</h2>
+            {instalaciones.length === 0 && <p style={{color: theme.textMuted, textAlign:'center'}}>No hay instalaciones programadas.</p>}
+            {instalaciones.map(inst => (
+              <div key={inst.id} style={{...cardStyle, borderLeft: `5px solid ${inst.estado === 'Realizada' ? theme.accent : theme.install}`}}>
+                <div style={{display:'flex', justifyContent:'space-between'}}>
+                  <div>
+                    <h4 style={{margin:0}}>{inst.cliente}</h4>
+                    <p style={{margin:'5px 0', fontSize:'11px', color: theme.textMuted}}>📍 {inst.direccion}</p>
+                    <p style={{margin:0, fontSize:'11px'}}>📅 {inst.fecha} | ⏰ {inst.hora}</p>
+                    <p style={{margin:'5px 0', fontSize:'11px', fontWeight:'bold'}}>👷 Instalador: {inst.instalador}</p>
+                  </div>
+                  <div style={{textAlign:'right'}}>
+                    <span style={{fontSize:'10px', padding:'3px 8px', borderRadius:'10px', background: inst.estado === 'Realizada' ? theme.accent : theme.install, color: '#fff'}}>
+                      {inst.estado}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{marginTop:'15px', display:'flex', gap:'10px', alignItems:'center'}}>
+                   {inst.estado !== 'Realizada' && (
+                     <>
+                      <label style={{background: theme.bg, border: `1px solid ${theme.border}`, padding: '8px', borderRadius: '8px', fontSize: '10px', cursor: 'pointer', flex: 1, textAlign: 'center'}}>
+                        📷 SUBIR EVIDENCIA
+                        <input type="file" accept="image/*" onChange={(e) => manejarEvidencia(inst.id, e)} style={{display:'none'}} />
+                      </label>
+                      <button onClick={() => cambiarEstadoInst(inst.id, 'Cancelada')} style={{...btnExportStyle, background: theme.danger}}>Anular</button>
+                     </>
+                   )}
+                   {inst.evidencia && (
+                     <img src={inst.evidencia} alt="Evidencia" style={{width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover'}} />
+                   )}
+                   <button onClick={() => window.open(`https://wa.me/${inst.telefono}?text=Hola ${inst.cliente}, su instalación está ${inst.estado}.`)} style={{...btnExportStyle, background: '#25D366'}}>WA 📱</button>
+                   <button onClick={() => eliminarInstalacion(inst.id)} style={{background: 'none', border: 'none', color: theme.textMuted, fontSize: '12px'}}>🗑️</button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -578,7 +590,6 @@ export default function App() {
                 <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.accent, color:'#fff', borderRadius:'10px', border:'none'}}>GUARDAR ⚡</button>
               </form>
             </div>
-
             <div style={{...cardStyle, border:`1px solid ${theme.excel}50`}}>
                <h3 style={{fontSize:'12px', margin:'0 0 10px 0', color:theme.excel}}>📦 EXPORTAR INVENTARIO TOTAL</h3>
                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
@@ -586,7 +597,6 @@ export default function App() {
                   <button onClick={() => exportarPDFGenerico('INVENTARIO COMPLETO', ['Nombre', 'Paca', 'Costo', 'Venta', 'Stock'], inventario.map(p => [p.nombre, p.paca, `$${p.costo_unitario}`, `$${p.precio}`, p.stock]), 'Inventario_Completo')} style={{...btnExportStyle, background: theme.pdf, justifyContent:'center'}}>PDF</button>
                </div>
             </div>
-
             <div style={cardStyle}>
               <h3 style={{fontSize:'14px', marginTop:0}}>📊 ESTADÍSTICAS POR PROVEEDOR</h3>
               <div style={{overflowX:'auto'}}>
@@ -627,9 +637,36 @@ export default function App() {
               </div>
             ))}
             {carrito.length > 0 && (
-              <div style={{display:'flex', gap:'10px'}}>
-                <button className={btnClass} onClick={finalizarVenta} style={{flex: 2, padding:'15px', background:theme.accent, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>COBRAR ✅</button>
-                <button className={btnClass} onClick={apartarDesdeCarrito} style={{flex: 1, padding:'15px', background:theme.apartado, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>APARTAR 🔖</button>
+              <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
+                <div style={{display:'flex', gap:'10px'}}>
+                  <button className={btnClass} onClick={finalizarVenta} style={{flex: 2, padding:'15px', background:theme.accent, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>COBRAR ✅</button>
+                  <button className={btnClass} onClick={apartarDesdeCarrito} style={{flex: 1, padding:'15px', background:theme.apartado, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>APARTAR 🔖</button>
+                </div>
+                {/* BOTÓN NUEVO PUNTO DE VENTA */}
+                <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{width:'100%', padding:'12px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold'}}>PROGRAMAR INSTALACIÓN 🛠️</button>
+              </div>
+            )}
+
+            {/* MODAL DE INSTALACIÓN */}
+            {mostrarModalInstalacion && (
+              <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.8)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px'}}>
+                <div style={{...cardStyle, maxWidth:'400px', width:'100%'}}>
+                  <h3 style={{marginTop:0, color: theme.install}}>ORDEN DE INSTALACIÓN</h3>
+                  <form onSubmit={guardarInstalacion}>
+                    <input placeholder="Cliente" value={nuevaInst.cliente} onChange={e=>setNuevaInst({...nuevaInst, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+                    <input placeholder="Dirección de Instalación" value={nuevaInst.direccion} onChange={e=>setNuevaInst({...nuevaInst, direccion: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+                    <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
+                      <input type="date" value={nuevaInst.fecha} onChange={e=>setNuevaInst({...nuevaInst, fecha: e.target.value})} style={inputStyle} required />
+                      <input type="time" value={nuevaInst.hora} onChange={e=>setNuevaInst({...nuevaInst, hora: e.target.value})} style={inputStyle} required />
+                    </div>
+                    <input placeholder="WhatsApp Cliente" value={nuevaInst.telefono} onChange={e=>setNuevaInst({...nuevaInst, telefono: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
+                    <input placeholder="Nombre del Instalador" value={nuevaInst.instalador} onChange={e=>setNuevaInst({...nuevaInst, instalador: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+                    <div style={{display:'flex', gap:'10px'}}>
+                      <button type="button" onClick={()=>setMostrarModalInstalacion(false)} style={{...inputStyle, background: theme.bg, flex:1}}>Cancelar</button>
+                      <button type="submit" style={{...inputStyle, background: theme.install, color:'#fff', border:'none', flex:1, fontWeight:'bold'}}>AGENDAR</button>
+                    </div>
+                  </form>
+                </div>
               </div>
             )}
           </>
@@ -645,7 +682,6 @@ export default function App() {
               </div>
               <button className={btnClass} onClick={realizarCorte} style={{width:'100%', marginTop:'15px', padding:'10px', background:theme.accent, borderRadius:'8px', color:'#fff', border:'none'}}>CORTE DE CAJA 🏁</button>
             </div>
-
             <div style={cardStyle}>
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}>
                 <h3 style={{fontSize:'12px', margin:0, color:theme.textMuted}}>🧾 REGISTRO DE VENTAS</h3>
@@ -667,17 +703,9 @@ export default function App() {
                   <tbody>
                     {filtrados.vnt.map((v) => (
                       <tr key={v.id} style={{borderBottom:`1px solid ${theme.border}`}}>
-                        <td style={{padding:'5px', verticalAlign:'top'}}>
-                          {new Date(v.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}<br/>
-                          <span style={{fontSize:'8px', opacity:0.7}}>{v.detalles?.match(/\[(.*?)\]/)?.[1] || 'S/F'}</span>
-                        </td>
-                        <td style={{padding:'5px', verticalAlign:'top'}}>
-                          <span style={{color:theme.accent}}>{v.detalles?.match(/Vendedor: (.*?) \|/)?.[1] || 'LIVE'}</span><br/>
-                          {v.detalles?.match(/Pago: (.*?) \|/)?.[1] || 'Efectivo'}
-                        </td>
-                        <td style={{padding:'5px', fontSize:'9px', maxWidth:'150px'}}>
-                          {v.detalles?.split('Productos: ')[1] || v.detalles}
-                        </td>
+                        <td style={{padding:'5px', verticalAlign:'top'}}>{new Date(v.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}<br/><span style={{fontSize:'8px', opacity:0.7}}>{v.detalles?.match(/\[(.*?)\]/)?.[1] || 'S/F'}</span></td>
+                        <td style={{padding:'5px', verticalAlign:'top'}}><span style={{color:theme.accent}}>{v.detalles?.match(/Vendedor: (.*?) \|/)?.[1] || 'LIVE'}</span><br/>{v.detalles?.match(/Pago: (.*?) \|/)?.[1] || 'Efectivo'}</td>
+                        <td style={{padding:'5px', fontSize:'9px', maxWidth:'150px'}}>{v.detalles?.split('Productos: ')[1] || v.detalles}</td>
                         <td style={{textAlign:'right', padding:'5px', fontWeight:'bold'}}>${v.total}</td>
                       </tr>
                     ))}
@@ -685,7 +713,6 @@ export default function App() {
                 </table>
               </div>
             </div>
-
             <div style={cardStyle}>
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}>
                 <h3 style={{fontSize:'12px', margin:0, color:theme.textMuted}}>📋 CORTES DE CAJA</h3>
@@ -710,9 +737,7 @@ export default function App() {
                         <td style={{padding:'5px'}}>{c.timestamp.split(', ')[1]}</td>
                         <td style={{padding:'5px'}}>{c.responsable}</td>
                         <td style={{textAlign:'right', padding:'5px'}}>${c.reportado}</td>
-                        <td style={{textAlign:'right', padding:'5px', color: c.diferencia < 0 ? theme.danger : theme.accent}}>
-                          {c.diferencia >= 0 ? '+' : ''}${c.diferencia}
-                        </td>
+                        <td style={{textAlign:'right', padding:'5px', color: c.diferencia < 0 ? theme.danger : theme.accent}}>{c.diferencia >= 0 ? '+' : ''}${c.diferencia}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -728,32 +753,28 @@ export default function App() {
           <span style={{fontSize:'22px'}}>🔴</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Live</span>
         </button>
-        
         <button className={btnClass} onClick={()=>setVista('catalogo')} style={{background: vista==='catalogo'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>📦</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Stock</span>
         </button>
-        
         <button className={btnClass} onClick={()=>setVista('pos')} style={{background: vista==='pos'?theme.bg:'none', border:'none', position: 'relative', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>🛒</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Venta</span>
-          {carrito.length > 0 && (
-            <span style={{ position: 'absolute', top: '-5px', right: '5px', background: theme.danger, color: 'white', borderRadius: '50%', padding: '2px 6px', fontSize: '10px', fontWeight: 'bold', border: `2px solid ${theme.card}` }}>
-              {carrito.length}
-            </span>
-          )}
+          {carrito.length > 0 && <span style={{ position: 'absolute', top: '-5px', right: '5px', background: theme.danger, color: 'white', borderRadius: '50%', padding: '2px 6px', fontSize: '10px', fontWeight: 'bold', border: `2px solid ${theme.card}` }}>{carrito.length}</span>}
         </button>
-
         <button className={btnClass} onClick={()=>setVista('apartados')} style={{background: vista==='apartados'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>🔖</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Apartar</span>
         </button>
-        
+        {/* NUEVO BOTÓN NAVEGACIÓN */}
+        <button className={btnClass} onClick={()=>setVista('installations')} style={{background: vista==='installations'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
+          <span style={{fontSize:'22px'}}>🛠️</span>
+          <span style={{fontSize:'9px', color: theme.textMuted}}>Instal.</span>
+        </button>
         <button className={btnClass} onClick={()=>setVista('admin')} style={{background: vista==='admin'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>⚡</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Admin</span>
         </button>
-        
         <button className={btnClass} onClick={()=>setVista('historial')} style={{background: vista==='historial'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>📈</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Corte</span>
@@ -762,16 +783,8 @@ export default function App() {
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .btn-interactivo {
-            transition: transform 0.1s active;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .btn-interactivo:active {
-            transform: scale(0.95);
-        }
+        .btn-interactivo { transition: transform 0.1s active; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .btn-interactivo:active { transform: scale(0.95); }
       `}</style>
     </div>
   );
