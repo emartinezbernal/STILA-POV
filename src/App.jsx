@@ -28,7 +28,7 @@ export default function App() {
   const [inputLogin, setInputLogin] = useState('');
 
   const [carrito, setCarrito] = useState([]);
-  const [vista, setVista] = useState('live'); 
+  const [vista, setVista] = useState('catalogo'); // CAMBIADO DE 'live' A 'catalogo' POR ESTAR OCULTO
   const [inventario, setInventario] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [historial, setHistorial] = useState([]);
@@ -749,10 +749,13 @@ export default function App() {
       </main>
 
       <nav style={{ position: 'fixed', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', padding: '12px', borderRadius: '20px', zIndex: 100 }}>
-        <button className={btnClass} onClick={()=>setVista('live')} style={{background: vista==='live'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
+        {/* ICONO LIVE OCULTO PARA USO FUTURO */}
+        {/* <button className={btnClass} onClick={()=>setVista('live')} style={{background: vista==='live'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>🔴</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Live</span>
-        </button>
+        </button> 
+        */}
+        
         <button className={btnClass} onClick={()=>setVista('catalogo')} style={{background: vista==='catalogo'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>📦</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Stock</span>
