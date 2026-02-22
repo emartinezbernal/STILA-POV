@@ -23,21 +23,20 @@ const theme = {
 };
 
 export default function App() {
-  // NUEVO ESTADO PARA LOGIN - MODIFICADO PARA SOPORTAR OBJETOS CON ROL
+  // --- CONTROL DE ACCESO (RBAC) ---
   const [usuarioActual, setUsuarioActual] = useState(() => {
     const guardado = localStorage.getItem('userStilaPro');
     if (!guardado) return null;
     try {
       return JSON.parse(guardado);
     } catch (e) {
-      // Compatibilidad con versiones anteriores que guardaban solo el string del nombre
       return { nombre: guardado, rol: 'vendedor' };
     }
   });
   const [inputLogin, setInputLogin] = useState('');
 
   const [carrito, setCarrito] = useState([]);
-  const [vista, setVista] = useState('catalogo'); // CAMBIADO DE 'live' A 'catalogo'
+  const [vista, setVista] = useState('catalogo'); 
   const [inventario, setInventario] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [historial, setHistorial] = useState([]);
@@ -53,7 +52,7 @@ export default function App() {
   // --- NUEVOS ESTADOS APARTADOS ---
   const [apartados, setApartados] = useState([]);
   const [nuevoApartado, setNuevoApartado] = useState({ cliente: '', producto: '', total: '', anticipo: '', telefono: '' });
-  const TIEMPO_LIMITE_HS = 168; // 7 días * 24 horas
+  const TIEMPO_LIMITE_HS = 168; 
 
   // --- NUEVOS ESTADOS INSTALACIONES ---
   const [instalaciones, setInstalaciones] = useState([]);
@@ -77,17 +76,11 @@ export default function App() {
   const [nuevoGasto, setNuevoGasto] = useState({ concepto: '', monto: '' });
   const inputNombreRef = useRef(null);
 
-  // --- LÓGICA DE PROTECCIÓN Y REDIRECCIÓN ---
+  // --- VALIDACIÓN DE RUTAS Y ROLES ---
   useEffect(() => {
     if (usuarioActual) {
-      // Redirigir instalador si intenta salir de su módulo
-      if (usuarioActual.rol === 'instalador' && vista !== 'installations') {
-        setVista('installations');
-      }
-      // Redirigir vendedor si intenta entrar a admin
-      if (usuarioActual.rol === 'vendedor' && vista === 'admin') {
-        setVista('catalogo');
-      }
+      if (usuarioActual.rol === 'instalador' && vista !== 'installations') setVista('installations');
+      if (usuarioActual.rol === 'vendedor' && vista === 'admin') setVista('catalogo');
     }
   }, [vista, usuarioActual]);
 
@@ -128,7 +121,7 @@ export default function App() {
     if (g) setGastos(g);
   }
 
-  // --- LÓGICA DE LOGIN CON ROLES ---
+  // --- LÓGICA DE LOGIN ---
   const manejarLogin = (e) => {
     e.preventDefault();
     const input = inputLogin.trim();
@@ -137,13 +130,9 @@ export default function App() {
       if (input.toUpperCase() === 'ADMIN123') rol = 'admin';
       else if (input.toUpperCase() === 'INSTALADOR01') rol = 'instalador';
       
-      const nuevoUsuario = { nombre: input, rol: rol };
-      setUsuarioActual(nuevoUsuario);
-      localStorage.setItem('userStilaPro', JSON.stringify(nuevoUsuario));
-      
-      // Vista inicial según rol
-      if (rol === 'instalador') setVista('installations');
-      else setVista('catalogo');
+      const userObj = { nombre: input, rol: rol };
+      setUsuarioActual(userObj);
+      localStorage.setItem('userStilaPro', JSON.stringify(userObj));
     }
   };
 
@@ -152,39 +141,22 @@ export default function App() {
     setUsuarioActual(null);
   };
 
-  // --- LÓGICA INSTALACIONES ---
-  const guardarInstalacion = (e) => {
-    e.preventDefault();
-    const id = Date.now();
-    const nueva = { ...nuevaInst, id, estado: 'En proceso', evidencia: null };
-    const lista = [nueva, ...instalaciones];
-    setInstalaciones(lista);
-    localStorage.setItem('instStilaPro', JSON.stringify(lista));
-    setMostrarModalInstalacion(false);
-    setNuevaInst({ cliente: '', direccion: '', fecha: '', hora: '', instalador: '', telefono: '', notas: '' });
-    alert("Instalación programada correctamente.");
+  // --- EXPORTACIÓN ---
+  const exportarExcelGenerico = (datos, nombreArchivo) => {
+    if (!window.XLSX) return alert("Cargando motor...");
+    const ws = window.XLSX.utils.json_to_sheet(datos);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, "Datos");
+    window.XLSX.writeFile(wb, `${nombreArchivo}.xlsx`);
   };
 
-  const manejarEvidencia = (id, e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const lista = instalaciones.map(inst => 
-          inst.id === id ? { ...inst, evidencia: reader.result, estado: 'Realizada' } : inst
-        );
-        setInstalaciones(lista);
-        localStorage.setItem('instStilaPro', JSON.stringify(lista));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const eliminarInstalacion = (id) => {
-    if(!window.confirm("¿Eliminar registro de instalación?")) return;
-    const lista = instalaciones.filter(i => i.id !== id);
-    setInstalaciones(lista);
-    localStorage.setItem('instStilaPro', JSON.stringify(lista));
+  const exportarPDFGenerico = (titulo, columnas, filas, nombreArchivo) => {
+    if (!window.jspdf) return alert("Cargando motor...");
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.text(titulo, 14, 20);
+    doc.autoTable({ startY: 25, head: [columnas], body: filas });
+    doc.save(`${nombreArchivo}.pdf`);
   };
 
   // --- LÓGICA LIVE ---
@@ -212,7 +184,7 @@ export default function App() {
     setTimeout(() => inputClienteRef.current?.focus(), 50);
   };
 
-  // --- LÓGICA DE APARTADOS ---
+  // --- LÓGICA APARTADOS ---
   const agregarApartado = (e) => {
     e.preventDefault();
     const id = Date.now();
@@ -252,6 +224,41 @@ export default function App() {
       setVista('apartados');
     } catch (e) { alert("Error al procesar el stock del apartado"); }
   }
+
+  // --- LÓGICA INSTALACIONES ---
+  const guardarInstalacion = (e) => {
+    e.preventDefault();
+    const id = Date.now();
+    const nueva = { ...nuevaInst, id, estado: 'En proceso', evidencia: null };
+    const lista = [nueva, ...instalaciones];
+    setInstalaciones(lista);
+    localStorage.setItem('instStilaPro', JSON.stringify(lista));
+    setMostrarModalInstalacion(false);
+    setNuevaInst({ cliente: '', direccion: '', fecha: '', hora: '', instalador: '', telefono: '', notas: '' });
+    alert("Instalación programada correctamente.");
+  };
+
+  const manejarEvidencia = (id, e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const lista = instalaciones.map(inst => 
+          inst.id === id ? { ...inst, evidencia: reader.result, estado: 'Realizada' } : inst
+        );
+        setInstalaciones(lista);
+        localStorage.setItem('instStilaPro', JSON.stringify(lista));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const eliminarInstalacion = (id) => {
+    if(!window.confirm("¿Eliminar registro de instalación?")) return;
+    const lista = instalaciones.filter(i => i.id !== id);
+    setInstalaciones(lista);
+    localStorage.setItem('instStilaPro', JSON.stringify(lista));
+  };
 
   // --- LÓGICA DE NEGOCIO ---
   const carritoAgrupado = useMemo(() => {
@@ -300,7 +307,11 @@ export default function App() {
     const tv = carrito.reduce((a, b) => a + b.precio, 0);
     const cv = carrito.reduce((a, b) => a + (b.costo_unitario || 0), 0);
     try {
-      await supabase.from('ventas').insert([{ total: tv, costo_total: cv, detalles: `Carrito: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') }]);
+      await supabase.from('ventas').insert([{ 
+        total: tv, 
+        costo_total: cv, 
+        detalles: `Responsable: ${usuarioActual.nombre} | Carrito: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') 
+      }]);
       for (const item of carritoAgrupado) {
         const pDB = inventario.find(p => p.id === item.id);
         if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
@@ -328,7 +339,7 @@ export default function App() {
         <div style={{ ...cardStyle, width: '100%', maxWidth: '350px', textAlign: 'center' }}>
           <h1 style={{ color: theme.accent, fontSize: '24px', marginBottom: '10px' }}>STILA-PRO ⚡</h1>
           <form onSubmit={manejarLogin}>
-            <input autoFocus placeholder="Tu Nombre o Código" value={inputLogin} onChange={e => setInputLogin(e.target.value)} style={{ ...inputStyle, textAlign: 'center', fontSize: '18px', marginBottom: '15px' }} />
+            <input autoFocus placeholder="Código o Nombre" value={inputLogin} onChange={e => setInputLogin(e.target.value)} style={{ ...inputStyle, textAlign: 'center', fontSize: '18px', marginBottom: '15px' }} />
             <button className={btnClass} style={{ width: '100%', padding: '15px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold' }}>ENTRAR</button>
           </form>
         </div>
@@ -341,7 +352,7 @@ export default function App() {
       <header style={{ background: theme.card, padding: '10px 15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}` }}>
         <h1 style={{margin:0, fontSize:'14px'}}>STILA-PRO <span style={{color: theme.accent}}>v15</span></h1>
         <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-          <span style={{fontSize:'10px', color:theme.textMuted}}>👤 {usuarioActual.nombre} ({usuarioActual.rol})</span>
+          <span style={{fontSize:'10px', color:theme.textMuted}}>👤 {usuarioActual.nombre} | {usuarioActual.rol.toUpperCase()}</span>
           <button onClick={cerrarSesion} style={{background:'none', border:'none', color:theme.danger, fontSize:'10px'}}>SALIR</button>
         </div>
       </header>
@@ -454,6 +465,12 @@ export default function App() {
                 <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.accent, color:'#fff', borderRadius:'10px', border:'none'}}>GUARDAR ⚡</button>
               </form>
             </div>
+            {/* Gastos, Reportes y demás lógica admin original se mantiene aquí */}
+            <div style={cardStyle}>
+               <h3 style={{marginTop:0}}>Exportación</h3>
+               <button onClick={() => exportarExcelGenerico(inventario, 'Inventario')} style={{background:theme.excel, color:'#fff', padding:'10px', border:'none', borderRadius:'8px', marginRight:'10px'}}>Excel</button>
+               <button onClick={() => exportarPDFGenerico('Inventario', ['Nombre', 'Stock'], inventario.map(p => [p.nombre, p.stock]), 'Inventario')} style={{background:theme.pdf, color:'#fff', padding:'10px', border:'none', borderRadius:'8px'}}>PDF</button>
+            </div>
           </>
         )}
 
@@ -483,7 +500,6 @@ export default function App() {
               <input type="date" value={fechaConsulta} onChange={e=>setFechaConsulta(e.target.value)} style={{...inputStyle, marginBottom:'15px'}} />
               <div style={{display:'flex', justifyContent:'space-around'}}>
                 <div><p style={{margin:0, fontSize:'10px'}}>VENTAS</p><h3>${filtrados.totalV}</h3></div>
-                {/* VALIDACIÓN DE ROL PARA UTILIDAD */}
                 {usuarioActual.rol === 'admin' && (
                   <div><p style={{margin:0, fontSize:'10px'}}>UTILIDAD</p><h3 style={{color:theme.accent}}>${filtrados.utilidad}</h3></div>
                 )}
@@ -517,10 +533,8 @@ export default function App() {
         )}
       </main>
 
-      {/* --- NAVEGACIÓN MODIFICADA SEGÚN ROLES --- */}
+      {/* --- NAVEGACIÓN BASADA EN ROLES --- */}
       <nav style={{ position: 'fixed', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', padding: '12px', borderRadius: '20px', zIndex: 100 }}>
-        
-        {/* Vistas para Vendedores y Admin */}
         {usuarioActual.rol !== 'instalador' && (
           <>
             <button className={btnClass} onClick={()=>setVista('catalogo')} style={{background: vista==='catalogo'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
@@ -539,13 +553,11 @@ export default function App() {
           </>
         )}
         
-        {/* Vista para Todos */}
         <button className={btnClass} onClick={()=>setVista('installations')} style={{background: vista==='installations'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>🛠️</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Instal.</span>
         </button>
 
-        {/* Vista Solo Admin */}
         {usuarioActual.rol === 'admin' && (
           <button className={btnClass} onClick={()=>setVista('admin')} style={{background: vista==='admin'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
             <span style={{fontSize:'22px'}}>⚡</span>
@@ -553,7 +565,6 @@ export default function App() {
           </button>
         )}
         
-        {/* Vista Corte (Vendedores y Admin) */}
         {usuarioActual.rol !== 'instalador' && (
           <button className={btnClass} onClick={()=>setVista('historial')} style={{background: vista==='historial'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
             <span style={{fontSize:'22px'}}>📈</span>
@@ -564,7 +575,6 @@ export default function App() {
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .btn-interactivo { transition: transform 0.1s active; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .btn-interactivo:active { transform: scale(0.95); }
       `}</style>
 
