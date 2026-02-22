@@ -28,7 +28,7 @@ export default function App() {
   const [inputLogin, setInputLogin] = useState('');
 
   const [carrito, setCarrito] = useState([]);
-  const [vista, setVista] = useState('catalogo'); // CAMBIADO DE 'live' A 'catalogo' POR ESTAR OCULTO
+  const [vista, setVista] = useState('catalogo'); // CAMBIADO DE 'live' A 'catalogo' por defecto
   const [inventario, setInventario] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [historial, setHistorial] = useState([]);
@@ -44,7 +44,7 @@ export default function App() {
   // --- NUEVOS ESTADOS APARTADOS ---
   const [apartados, setApartados] = useState([]);
   const [nuevoApartado, setNuevoApartado] = useState({ cliente: '', producto: '', total: '', anticipo: '', telefono: '' });
-  const TIEMPO_LIMITE_HS = 168; // 7 días * 24 horas
+  const TIEMPO_LIMITE_HS = 168; // 7 días
 
   // --- NUEVOS ESTADOS INSTALACIONES ---
   const [instalaciones, setInstalaciones] = useState([]);
@@ -77,7 +77,6 @@ export default function App() {
       const apartadosGuardados = localStorage.getItem('apartadosStilaPro');
       if (apartadosGuardados) setApartados(JSON.parse(apartadosGuardados));
 
-      // Cargar instalaciones
       const instGuardadas = localStorage.getItem('instStilaPro');
       if (instGuardadas) setInstalaciones(JSON.parse(instGuardadas));
 
@@ -106,17 +105,90 @@ export default function App() {
     if (g) setGastos(g);
   }
 
+  const manejarLogin = (e) => {
+    e.preventDefault();
+    if (inputLogin.trim()) {
+      setUsuarioActual(inputLogin);
+      localStorage.setItem('userStilaPro', inputLogin);
+    }
+  };
+
+  const cerrarSesion = () => {
+    localStorage.removeItem('userStilaPro');
+    setUsuarioActual('');
+  };
+
+  // --- EXPORTACIÓN ---
+  const exportarExcelGenerico = (datos, nombreArchivo) => {
+    if (!window.XLSX) return alert("Cargando motor...");
+    const ws = window.XLSX.utils.json_to_sheet(datos);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, "Datos");
+    window.XLSX.writeFile(wb, `${nombreArchivo}.xlsx`);
+  };
+
+  const exportarPDFGenerico = (titulo, columnas, filas, nombreArchivo) => {
+    if (!window.jspdf) return alert("Cargando motor...");
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.text(titulo, 14, 20);
+    doc.autoTable({ startY: 25, head: [columnas], body: filas });
+    doc.save(`${nombreArchivo}.pdf`);
+  };
+
+  // --- LÓGICA LIVE ---
+  const registrarCapturaLive = async (precio) => {
+    if (!clienteLive.trim() || precio <= 0) return;
+    const folio = `L-${Math.floor(1000 + Math.random() * 9000)}`;
+    const nuevaCaptura = {
+      id: Date.now(),
+      cliente: clienteLive.trim().toUpperCase(),
+      precio: Number(precio),
+      folio,
+      hora: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+    };
+    setCapturasLive([nuevaCaptura, ...capturasLive]);
+    try {
+      await supabase.from('ventas').insert([{ 
+        total: nuevaCaptura.precio, 
+        costo_total: 0, 
+        detalles: `🔴 LIVE [${folio}]: ${nuevaCaptura.cliente} - Precio: $${nuevaCaptura.precio}` 
+      }]);
+      obtenerTodo();
+    } catch (e) { console.error(e); }
+    setClienteLive('');
+    setPrecioLiveManual('');
+    setTimeout(() => inputClienteRef.current?.focus(), 50);
+  };
+
+  // --- LÓGICA APARTADOS ---
+  const agregarApartado = (e) => {
+    e.preventDefault();
+    const id = Date.now();
+    const nuevo = { ...nuevoApartado, id, fecha: new Date().toISOString(), estado: 'Pendiente', restante: Number(nuevoApartado.total) - Number(nuevoApartado.anticipo) };
+    const listaActualizada = [nuevo, ...apartados];
+    setApartados(listaActualizada);
+    localStorage.setItem('apartadosStilaPro', JSON.stringify(listaActualizada));
+    setNuevoApartado({ cliente: '', producto: '', total: '', anticipo: '', telefono: '' });
+  };
+
+  const eliminarApartado = (id) => {
+    if(!window.confirm("¿Eliminar este registro?")) return;
+    const filtrados = apartados.filter(a => a.id !== id);
+    setApartados(filtrados);
+    localStorage.setItem('apartadosStilaPro', JSON.stringify(filtrados));
+  };
+
+  const enviarWhatsAppApartado = (a) => {
+    const msj = `Hola ${a.cliente}, te saludamos de STILA. Te recordamos tu apartado de "${a.producto}". Saldo pendiente: $${a.restante}. ¡Bonito día!`;
+    window.open(`https://wa.me/${a.telefono}?text=${encodeURIComponent(msj)}`);
+  };
+
   // --- LÓGICA INSTALACIONES ---
   const guardarInstalacion = (e) => {
     e.preventDefault();
     const id = Date.now();
-    const nueva = { 
-      ...nuevaInst, 
-      id, 
-      estado: 'En proceso', 
-      evidencia: null,
-      creadoPor: usuarioActual 
-    };
+    const nueva = { ...nuevaInst, id, estado: 'En proceso', evidencia: null };
     const lista = [nueva, ...instalaciones];
     setInstalaciones(lista);
     localStorage.setItem('instStilaPro', JSON.stringify(lista));
@@ -140,14 +212,6 @@ export default function App() {
     }
   };
 
-  const cambiarEstadoInst = (id, nuevoEstado) => {
-    const lista = instalaciones.map(inst => 
-      inst.id === id ? { ...inst, estado: nuevoEstado } : inst
-    );
-    setInstalaciones(lista);
-    localStorage.setItem('instStilaPro', JSON.stringify(lista));
-  };
-
   const eliminarInstalacion = (id) => {
     if(!window.confirm("¿Eliminar registro de instalación?")) return;
     const lista = instalaciones.filter(i => i.id !== id);
@@ -155,177 +219,12 @@ export default function App() {
     localStorage.setItem('instStilaPro', JSON.stringify(lista));
   };
 
-  // --- FUNCIONES DE EXPORTACIÓN ---
-  const exportarExcelGenerico = (datos, nombreArchivo) => {
-    if (!window.XLSX) return alert("Cargando motor de Excel...");
-    const ws = window.XLSX.utils.json_to_sheet(datos);
-    const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, "Datos");
-    window.XLSX.writeFile(wb, `${nombreArchivo}_${hoyStr}.xlsx`);
+  const enviarWhatsAppInstalacion = (inst) => {
+    const msj = `Hola ${inst.cliente}, reporte de instalación finalizada en: ${inst.direccion}. Estado: ${inst.estado}. ${inst.evidencia ? '(Evidencia fotográfica adjunta en el chat)' : ''}`;
+    window.open(`https://wa.me/${inst.telefono}?text=${encodeURIComponent(msj)}`);
   };
-
-  const exportarPDFGenerico = (titulo, columnas, filas, nombreArchivo) => {
-    if (!window.jspdf) return alert("Cargando motor de PDF...");
-    const doc = new window.jspdf.jsPDF();
-    doc.setFontSize(18);
-    doc.text(titulo, 14, 22);
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-    doc.text(`Generado por: ${usuarioActual} - ${new Date().toLocaleString()}`, 14, 30);
-    doc.autoTable({
-      startY: 35,
-      head: [columnas],
-      body: filas,
-      theme: 'grid',
-      headStyles: { fillColor: [16, 185, 129] }
-    });
-    doc.save(`${nombreArchivo}_${hoyStr}.pdf`);
-  };
-
-  // --- LÓGICA DE LOGIN ---
-  const manejarLogin = (e) => {
-    e.preventDefault();
-    if (inputLogin.trim()) {
-      const user = inputLogin.trim().toUpperCase();
-      setUsuarioActual(user);
-      localStorage.setItem('userStilaPro', user);
-    }
-  };
-
-  const cerrarSesion = () => {
-    localStorage.removeItem('userStilaPro');
-    setUsuarioActual('');
-  };
-
-  // --- LÓGICA LIVE ---
-  const registrarCapturaLive = async (precio) => {
-    if (!clienteLive.trim() || precio <= 0) return;
-    
-    const metodo = window.prompt("Entrega: 1. Envío | 2. Local | 3. Punto Medio", "1");
-    const metodoTxt = metodo === "1" ? "Envío a domicilio" : metodo === "2" ? "Recoge en local" : "Punto medio";
-
-    let costoEnvio = 0;
-    if (metodo === "1" || metodo === "3") {
-      const cE = window.prompt("Costo de envío / entrega:", "0");
-      costoEnvio = Number(cE) || 0;
-    }
-
-    const folio = `L-${Math.floor(1000 + Math.random() * 9000)}`;
-    const nuevaCaptura = {
-      id: Date.now(),
-      cliente: clienteLive.trim().toUpperCase(),
-      precioPrenda: Number(precio),
-      envio: costoEnvio,
-      total: Number(precio) + costoEnvio,
-      folio,
-      metodo: metodoTxt,
-      hora: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setCapturasLive([nuevaCaptura, ...capturasLive]);
-    
-    try {
-      await supabase.from('ventas').insert([{ 
-        total: nuevaCaptura.total, 
-        costo_total: 0, 
-        detalles: `🔴 LIVE [${folio}]: ${nuevaCaptura.cliente} - Prenda: $${nuevaCaptura.precioPrenda} + Envío: $${nuevaCaptura.envio} (${metodoTxt})` 
-      }]);
-      obtenerTodo();
-    } catch (e) { console.error(e); }
-
-    setClienteLive('');
-    setPrecioLiveManual('');
-    setTimeout(() => inputClienteRef.current?.focus(), 50);
-  };
-
-  const generarWhatsAppLive = (cap) => {
-    let msg = `¡Hola *${cap.cliente}*! 👋 Gracias por tu compra.\n\n`;
-    msg += `✅ *Detalle:*\n• Folio: *${cap.folio}*\n• Prenda: *$${cap.precioPrenda}*\n`;
-    if (cap.envio > 0) msg += `• Envío: *$${cap.envio}*\n`;
-    msg += `• Entrega: *${cap.metodo}*\n\n`;
-    msg += `*TOTAL A PAGAR: $${cap.total}*\n\n`;
-    msg += `Envíanos tu comprobante. ¡Tienes 24 hrs! ⏳👗`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-  };
-
-  // --- LÓGICA DE APARTADOS ---
-  const agregarApartado = (e) => {
-    e.preventDefault();
-    const id = Date.now();
-    const nuevo = { 
-      ...nuevoApartado, 
-      id, 
-      fecha: new Date().toISOString(),
-      estado: 'Pendiente',
-      restante: Number(nuevoApartado.total) - Number(nuevoApartado.anticipo)
-    };
-    const listaActualizada = [nuevo, ...apartados];
-    setApartados(listaActualizada);
-    localStorage.setItem('apartadosStilaPro', JSON.stringify(listaActualizada));
-    setNuevoApartado({ cliente: '', producto: '', total: '', anticipo: '', telefono: '' });
-  };
-
-  const generarWhatsAppApartado = (ap) => {
-    let msg = `*🔖 COMPROBANTE DE APARTADO - STILA-PRO*\n`;
-    msg += `--------------------------\n`;
-    msg += `👤 Cliente: *${ap.cliente}*\n`;
-    msg += `📦 Producto: *${ap.producto}*\n`;
-    msg += `💰 Total: *$${ap.total}*\n`;
-    msg += `💵 Anticipo: *$${ap.anticipo}*\n`;
-    msg += `📉 Restante: *${ap.restante}*\n`;
-    msg += `--------------------------\n`;
-    msg += `⏳ Tiempo límite: 7 días para liquidar.\n`;
-    msg += `¡Gracias por apartar! ✨`;
-    window.open(`https://wa.me/${ap.telefono}?text=${encodeURIComponent(msg)}`, '_blank');
-  };
-
-  const eliminarApartado = (id) => {
-    if(!window.confirm("¿Eliminar este registro?")) return;
-    const filtrados = apartados.filter(a => a.id !== id);
-    setApartados(filtrados);
-    localStorage.setItem('apartadosStilaPro', JSON.stringify(filtrados));
-  };
-
-  async function apartarDesdeCarrito() {
-    if (carrito.length === 0) return;
-    const cliente = window.prompt("Nombre del cliente para el apartado:");
-    if (!cliente) return;
-    const tel = window.prompt("Número de WhatsApp (ej. 521...):");
-    const anticipo = window.prompt("Monto del anticipo recibido:", "0");
-    if (anticipo === null) return;
-    const tv = carrito.reduce((a, b) => a + b.precio, 0);
-    const productosTxt = carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ');
-    try {
-      for (const item of carritoAgrupado) {
-        const pDB = inventario.find(p => p.id === item.id);
-        if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
-      }
-      const id = Date.now();
-      const nuevo = { id, cliente: cliente.toUpperCase(), producto: productosTxt, total: tv, anticipo: Number(anticipo), telefono: tel || '', fecha: new Date().toISOString(), estado: 'Pendiente', restante: tv - Number(anticipo) };
-      const listaActualizada = [nuevo, ...apartados];
-      setApartados(listaActualizada);
-      localStorage.setItem('apartadosStilaPro', JSON.stringify(listaActualizada));
-      alert("Apartado registrado y stock descontado.");
-      setCarrito([]);
-      await obtenerTodo();
-      setVista('apartados');
-      generarWhatsAppApartado(nuevo);
-    } catch (e) { alert("Error al procesar el stock del apartado"); console.error(e); }
-  }
 
   // --- LÓGICA DE NEGOCIO ---
-  const statsProveedores = useMemo(() => {
-    const stats = {};
-    inventario.forEach(p => {
-      const prov = p.proveedor || 'Sin Nombre';
-      if (!stats[prov]) stats[prov] = { stock: 0, inversion: 0, ventaEsperada: 0 };
-      stats[prov].stock += p.stock;
-      stats[prov].inversion += (p.stock * (p.costo_unitario || 0));
-      stats[prov].ventaEsperada += (p.stock * (p.precio || 0));
-    });
-    return Object.entries(stats);
-  }, [inventario]);
-
   const carritoAgrupado = useMemo(() => {
     const grupos = {};
     carrito.forEach(item => {
@@ -364,32 +263,25 @@ export default function App() {
     const nuevosCortes = [nuevoCorte, ...cortes];
     setCortes(nuevosCortes);
     localStorage.setItem('cortesStilaPro', JSON.stringify(nuevosCortes));
-    let msg = `*🏁 REPORTE CIERRE - STILA-PRO*\n📅 Fecha: ${fechaConsulta}\n👤 Responsable: *${usuarioActual}*\n--------------------------\n💰 Ventas Totales: *$${filtrados.totalV}*\n📉 Gastos Totales: *$${filtrados.totalG}*\n💵 Esperado en Caja: *$${esperado}*\n--------------------------\n✅ Efectivo Físico: *$${fisico}*\n⚖️ Diferencia: *${dif >= 0 ? '+' : ''}$${dif}*`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-    alert("Corte realizado y reporte enviado.");
+    alert("Corte realizado correctamente.");
   };
 
   async function finalizarVenta() {
     if (carrito.length === 0) return;
-    const m = window.prompt("1. Efec | 2. Trans | 3. Tarj", "1");
-    if (!m) return;
-    let mTxt = m === "1" ? "Efectivo" : m === "2" ? "Transferencia" : "Tarjeta";
     const tv = carrito.reduce((a, b) => a + b.precio, 0);
     const cv = carrito.reduce((a, b) => a + (b.costo_unitario || 0), 0);
-    const folioVenta = `TKT-${Math.floor(1000 + Math.random() * 9000)}`;
-    const hora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
     try {
-      await supabase.from('ventas').insert([{ total: tv, costo_total: cv, detalles: `🛒 [${folioVenta}] Vendedor: ${usuarioActual} | Pago: ${mTxt} | Hora: ${hora} | Productos: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') }]);
+      await supabase.from('ventas').insert([{ 
+        total: tv, 
+        costo_total: cv, 
+        detalles: `Responsable: ${usuarioActual} | Carrito: ` + carritoAgrupado.map(i => `${i.nombre} (x${i.cantCar})`).join(', ') 
+      }]);
       for (const item of carritoAgrupado) {
         const pDB = inventario.find(p => p.id === item.id);
         if (pDB) await supabase.from('productos').update({ stock: pDB.stock - item.cantCar }).eq('id', item.id);
       }
-      let ticketMsg = `*🛍️ TICKET DE COMPRA - STILA-PRO*\n--------------------------\n🆔 Folio: *${folioVenta}*\n👤 Vendedor: *${usuarioActual}*\n📅 Fecha: ${new Date().toLocaleDateString()} | ${hora}\n💳 Pago: *${mTxt}*\n--------------------------\n`;
-      carritoAgrupado.forEach(item => { ticketMsg += `• ${item.nombre} (x${item.cantCar}) - $${item.subtotal}\n`; });
-      ticketMsg += `--------------------------\n*TOTAL: $${tv}*\n\n¡Gracias por tu preferencia! ✨`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(ticketMsg)}`, '_blank');
       setCarrito([]); await obtenerTodo(); setVista('historial');
-    } catch (e) { alert("Error al procesar la venta"); }
+    } catch (e) { alert("Error en venta"); }
   }
 
   async function guardarTurbo(e) {
@@ -404,16 +296,14 @@ export default function App() {
   const cardStyle = { background: theme.card, borderRadius: '15px', padding: '15px', border: `1px solid ${theme.border}`, marginBottom: '12px', color: theme.text };
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, boxSizing: 'border-box' };
   const btnClass = "btn-interactivo";
-  const btnExportStyle = { padding: '8px 12px', borderRadius: '8px', border: 'none', color: '#fff', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' };
 
   if (!usuarioActual) {
     return (
       <div style={{ backgroundColor: theme.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'sans-serif' }}>
         <div style={{ ...cardStyle, width: '100%', maxWidth: '350px', textAlign: 'center' }}>
           <h1 style={{ color: theme.accent, fontSize: '24px', marginBottom: '10px' }}>STILA-PRO ⚡</h1>
-          <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '20px' }}>Ingresa tu nombre para comenzar</p>
           <form onSubmit={manejarLogin}>
-            <input autoFocus placeholder="Nombre de Usuario" value={inputLogin} onChange={e => setInputLogin(e.target.value)} style={{ ...inputStyle, textAlign: 'center', fontSize: '18px', marginBottom: '15px' }} />
+            <input autoFocus placeholder="Tu Nombre o Código" value={inputLogin} onChange={e => setInputLogin(e.target.value)} style={{ ...inputStyle, textAlign: 'center', fontSize: '18px', marginBottom: '15px' }} />
             <button className={btnClass} style={{ width: '100%', padding: '15px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold' }}>ENTRAR</button>
           </form>
         </div>
@@ -425,9 +315,9 @@ export default function App() {
     <div style={{ fontFamily: 'sans-serif', backgroundColor: theme.bg, color: theme.text, minHeight: '100vh', paddingBottom: '100px' }}>
       <header style={{ background: theme.card, padding: '10px 15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}` }}>
         <h1 style={{margin:0, fontSize:'14px'}}>STILA-PRO <span style={{color: theme.accent}}>v15</span></h1>
-        <div style={{ display:'flex', alignItems:'center', gap: '10px'}}>
-           <span style={{ fontSize: '10px', color: theme.textMuted }}>👤 {usuarioActual}</span>
-           <button onClick={cerrarSesion} style={{ background: 'none', border: 'none', color: theme.danger, fontSize: '10px' }}>SALIR</button>
+        <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+          <span style={{fontSize:'10px', color:theme.textMuted}}>👤 {usuarioActual}</span>
+          <button onClick={cerrarSesion} style={{background:'none', border:'none', color:theme.danger, fontSize:'10px'}}>SALIR</button>
         </div>
       </header>
 
@@ -447,28 +337,10 @@ export default function App() {
                 <button className={btnClass} onClick={() => registrarCapturaLive(precioLiveManual)} style={{background:theme.accent, color:'#fff', border:'none', borderRadius:'10px', padding:'0 20px'}}>OK</button>
               </div>
             </div>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}>
-              <h3 style={{fontSize:'12px', color:theme.textMuted, margin:0}}>ÚLTIMAS ASIGNACIONES</h3>
-              <div style={{display:'flex', gap:'5px'}}>
-                <button onClick={() => exportarExcelGenerico(capturasLive, 'Live_Capturas')} style={{...btnExportStyle, background: theme.excel}}>XLS</button>
-                <button onClick={() => exportarPDFGenerico('ASIGNACIONES LIVE', ['Cliente', 'Folio', 'Metodo', 'Total'], capturasLive.map(c => [c.cliente, c.folio, c.metodo, `$${c.total}`]), 'Live_Capturas')} style={{...btnExportStyle, background: theme.pdf}}>PDF</button>
-              </div>
-            </div>
-            {capturasLive.map((cap) => (
-              <div key={cap.id} style={cardStyle}>
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                  <div>
-                    <p style={{margin:0, fontWeight:'bold'}}>{cap.cliente}</p>
-                    <div style={{display:'flex', gap:'8px', marginTop:'4px'}}>
-                      <span style={{fontSize:'10px', color:theme.textMuted}}>Folio: {cap.folio}</span>
-                      <span style={{fontSize:'10px', color:theme.live}}>🚚 {cap.metodo} {cap.envio > 0 && `(+$${cap.envio})`}</span>
-                    </div>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <p style={{margin:0, color:theme.accent, fontWeight:'bold', fontSize:'18px'}}>${cap.total}</p>
-                    <button className={btnClass} onClick={() => generarWhatsAppLive(cap)} style={{background:'none', border:`1px solid ${theme.accent}`, color:theme.accent, fontSize:'10px', borderRadius:'5px', padding:'2px 5px'}}>WA 📱</button>
-                  </div>
-                </div>
+            {capturasLive.map(c => (
+              <div key={c.id} style={{...cardStyle, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                <div><span style={{color:theme.live, fontWeight:'bold'}}>{c.folio}</span> <br/> <b>{c.cliente}</b></div>
+                <div style={{textAlign:'right'}}><span style={{fontSize:'18px', fontWeight:'bold'}}>${c.precio}</span> <br/> <span style={{fontSize:'9px', color:theme.textMuted}}>{c.hora}</span></div>
               </div>
             ))}
           </div>
@@ -476,14 +348,11 @@ export default function App() {
 
         {vista === 'catalogo' && (
           <>
-            <div style={{display: 'flex', gap: '10px', marginBottom: '15px'}}>
-              <input placeholder="🔍 Buscar..." value={busqueda} onChange={e=>setBusqueda(e.target.value)} style={{...inputStyle, flex: 1}} />
-              <button onClick={() => exportarExcelGenerico(inventarioReal.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase())), 'Catalogo_Actual')} style={{...btnExportStyle, background: theme.excel, padding: '0 15px'}}>EXCEL</button>
-            </div>
+            <input placeholder="🔍 Buscar en inventario..." value={busqueda} onChange={e=>setBusqueda(e.target.value)} style={{...inputStyle, marginBottom: '15px'}} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               {inventarioReal.filter(p => p.stockActual > 0 && p.nombre.toLowerCase().includes(busqueda.toLowerCase())).map(p => (
                 <div key={p.id} style={cardStyle}>
-                  <p style={{fontSize:'10px', margin:0, color: theme.textMuted}}>{p.paca || 'S/N'} / {p.proveedor || 'Sin Prov.'} / {p.stockActual} pzs</p>
+                  <p style={{fontSize:'10px', margin:0, color: theme.textMuted}}>{p.paca || 'S/N'} / {p.stockActual} pzs</p>
                   <h4 style={{margin:'5px 0', fontSize:'13px'}}>{p.nombre}</h4>
                   <p style={{fontSize:'18px', fontWeight:'bold', margin:0}}>${p.precio}</p>
                   <button className={btnClass} onClick={()=>setCarrito([...carrito, p])} style={{width:'100%', marginTop:'10px', padding:'8px', background:theme.bg, color:theme.accent, border:`1px solid ${theme.border}`, borderRadius:'8px'}}>AÑADIR</button>
@@ -495,138 +364,98 @@ export default function App() {
 
         {vista === 'apartados' && (
           <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            <div style={{...cardStyle, border: `1px solid ${theme.apartado}50`}}>
-              <h3 style={{fontSize:'14px', margin:'0 0 15px 0', color: theme.apartado}}>🔖 NUEVO APARTADO</h3>
-              <form onSubmit={agregarApartado}>
-                <input placeholder="Nombre del Cliente" value={nuevoApartado.cliente} onChange={e=>setNuevoApartado({...nuevoApartado, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
-                <input placeholder="Producto(s)" value={nuevoApartado.producto} onChange={e=>setNuevoApartado({...nuevoApartado, producto: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
-                <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
-                  <input type="number" placeholder="Total" value={nuevoApartado.total} onChange={e=>setNuevoApartado({...nuevoApartado, total: e.target.value})} style={inputStyle} required />
-                  <input type="number" placeholder="Anticipo" value={nuevoApartado.anticipo} onChange={e=>setNuevoApartado({...nuevoApartado, anticipo: e.target.value})} style={inputStyle} required />
-                </div>
-                <input placeholder="WhatsApp (Ej: 521...)" value={nuevoApartado.telefono} onChange={e=>setNuevoApartado({...nuevoApartado, telefono: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
-                <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.apartado, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold'}}>CREAR APARTADO</button>
-              </form>
+            <div style={cardStyle}>
+              <h3 style={{marginTop:0, fontSize:'14px'}}>Nuevo Apartado</h3>
+              <input placeholder="Cliente" value={nuevoApartado.cliente} onChange={e=>setNuevoApartado({...nuevoApartado, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
+              <input placeholder="Producto" value={nuevoApartado.producto} onChange={e=>setNuevoApartado({...nuevoApartado, producto: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
+              <div style={{display:'flex', gap:'10px', marginBottom:'10px'}}>
+                <input type="number" placeholder="Total" value={nuevoApartado.total} onChange={e=>setNuevoApartado({...nuevoApartado, total: e.target.value})} style={inputStyle} />
+                <input type="number" placeholder="Anticipo" value={nuevoApartado.anticipo} onChange={e=>setNuevoApartado({...nuevoApartado, anticipo: e.target.value})} style={inputStyle} />
+              </div>
+              <input placeholder="Teléfono WhatsApp" value={nuevoApartado.telefono} onChange={e=>setNuevoApartado({...nuevoApartado, telefono: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
+              <button className={btnClass} onClick={agregarApartado} style={{width:'100%', padding:'12px', background:theme.apartado, color:'#fff', border:'none', borderRadius:'10px'}}>REGISTRAR APARTADO 🔖</button>
             </div>
-            <h3 style={{fontSize:'12px', color:theme.textMuted, marginBottom:'10px'}}>CONTROL DE APARTADOS</h3>
-            {apartados.map(ap => {
-              const horasTranscurridas = (Date.now() - ap.id) / (1000 * 60 * 60);
-              const esVencido = horasTranscurridas > TIEMPO_LIMITE_HS;
-              return (
-                <div key={ap.id} style={{...cardStyle, border: esVencido ? `1px solid ${theme.danger}` : `1px solid ${theme.border}`}}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                    <div>
-                      <p style={{margin:0, fontWeight:'bold', color: esVencido ? theme.danger : theme.text}}>{ap.cliente} {esVencido && '⚠️ VENCIDO'}</p>
-                      <p style={{margin:'4px 0', fontSize:'12px'}}>{ap.producto}</p>
-                      <p style={{margin:0, fontSize:'10px', color: theme.textMuted}}>Restante: <b style={{color:theme.accent}}>${ap.restante}</b></p>
-                    </div>
-                    <div style={{textAlign:'right', display:'flex', flexDirection:'column', gap:'5px'}}>
-                      <button onClick={() => generarWhatsAppApartado(ap)} style={{...btnExportStyle, background: '#25D366'}}>WA 📱</button>
-                      <button onClick={() => eliminarApartado(ap.id)} style={{...btnExportStyle, background: theme.danger}}>Borrar</button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* --- NUEVA VISTA: INSTALACIONES --- */}
-        {vista === 'installations' && (
-          <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
-              <h2 style={{color: theme.install, fontSize: '18px', margin: 0}}>🛠️ GESTIÓN DE INSTALACIONES</h2>
-              <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{padding:'8px 15px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold', fontSize:'11px'}}>NUEVA INSTALACIÓN 🛠️</button>
-            </div>
-            
-            {instalaciones.length === 0 && <p style={{color: theme.textMuted, textAlign:'center'}}>No hay instalaciones programadas.</p>}
-            {instalaciones.map(inst => (
-              <div key={inst.id} style={{...cardStyle, borderLeft: `5px solid ${inst.estado === 'Realizada' ? theme.accent : theme.install}`}}>
+            {apartados.map(a => (
+              <div key={a.id} style={{...cardStyle, borderLeft:`5px solid ${theme.apartado}`}}>
                 <div style={{display:'flex', justifyContent:'space-between'}}>
-                  <div>
-                    <h4 style={{margin:0}}>{inst.cliente}</h4>
-                    <p style={{margin:'5px 0', fontSize:'11px', color: theme.textMuted}}>📍 {inst.direccion}</p>
-                    <p style={{margin:0, fontSize:'11px'}}>📅 {inst.fecha} | ⏰ {inst.hora}</p>
-                    <p style={{margin:'5px 0', fontSize:'11px', fontWeight:'bold'}}>👷 Instalador: {inst.instalador}</p>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <span style={{fontSize:'10px', padding:'3px 8px', borderRadius:'10px', background: inst.estado === 'Realizada' ? theme.accent : theme.install, color: '#fff'}}>
-                      {inst.estado}
-                    </span>
+                  <h4 style={{margin:0}}>{a.cliente}</h4>
+                  <div style={{display:'flex', gap:'10px'}}>
+                    <button onClick={()=>enviarWhatsAppApartado(a)} style={{background:'none', border:'none', color:theme.accent}}>💬</button>
+                    <button onClick={()=>eliminarApartado(a.id)} style={{background:'none', border:'none', color:theme.danger}}>✕</button>
                   </div>
                 </div>
-
-                <div style={{marginTop:'15px', display:'flex', gap:'10px', alignItems:'center'}}>
-                   {inst.estado !== 'Realizada' && (
-                     <>
-                      <label style={{background: theme.bg, border: `1px solid ${theme.border}`, padding: '8px', borderRadius: '8px', fontSize: '10px', cursor: 'pointer', flex: 1, textAlign: 'center'}}>
-                        📷 SUBIR EVIDENCIA
-                        <input type="file" accept="image/*" onChange={(e) => manejarEvidencia(inst.id, e)} style={{display:'none'}} />
-                      </label>
-                      <button onClick={() => cambiarEstadoInst(inst.id, 'Cancelada')} style={{...btnExportStyle, background: theme.danger}}>Anular</button>
-                     </>
-                   )}
-                   {inst.evidencia && (
-                     <img src={inst.evidencia} alt="Evidencia" style={{width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover'}} />
-                   )}
-                   <button onClick={() => window.open(`https://wa.me/${inst.telefono}?text=Hola ${inst.cliente}, su instalación está ${inst.estado}.`)} style={{...btnExportStyle, background: '#25D366'}}>WA 📱</button>
-                   <button onClick={() => eliminarInstalacion(inst.id)} style={{background: 'none', border: 'none', color: theme.textMuted, fontSize: '12px'}}>🗑️</button>
+                <p style={{fontSize:'12px', margin:'5px 0'}}>{a.producto}</p>
+                <div style={{display:'flex', justifyContent:'space-between', fontSize:'13px', fontWeight:'bold'}}>
+                  <span>Total: ${a.total}</span>
+                  <span style={{color:theme.accent}}>Resta: ${a.restante}</span>
                 </div>
               </div>
             ))}
           </div>
         )}
 
+        {vista === 'installations' && (
+          <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{width:'100%', marginBottom:'15px', padding:'15px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold'}}>PROGRAMAR INSTALACIÓN 🛠️</button>
+            {instalaciones.map(inst => (
+              <div key={inst.id} style={{...cardStyle, borderLeft: `5px solid ${theme.install}`}}>
+                <div style={{display:'flex', justifyContent:'space-between'}}>
+                  <h4 style={{margin:0}}>{inst.cliente}</h4>
+                  <span style={{fontSize:'10px', padding:'3px 8px', borderRadius:'10px', background: inst.estado === 'Realizada' ? theme.accent : theme.install, color: '#fff'}}>{inst.estado}</span>
+                </div>
+                <p style={{margin:'5px 0', fontSize:'12px'}}>📍 {inst.direccion}</p>
+                <p style={{margin:0, fontSize:'11px', color:theme.textMuted}}>📅 {inst.fecha} | {inst.hora} | 👷 {inst.instalador}</p>
+                <div style={{marginTop:'15px', display:'flex', gap:'10px'}}>
+                   <label style={{background: theme.bg, border: `1px solid ${theme.border}`, padding: '8px', borderRadius: '8px', fontSize: '10px', cursor: 'pointer', flex: 1, textAlign: 'center'}}>
+                     📷 SUBIR EVIDENCIA
+                     <input type="file" accept="image/*" onChange={(e) => manejarEvidencia(inst.id, e)} style={{display:'none'}} />
+                   </label>
+                   <button onClick={()=>enviarWhatsAppInstalacion(inst)} style={{background:theme.accent, color:'#fff', padding:'8px', borderRadius:'8px', border:'none', flex:1, fontSize:'10px'}}>💬 WHATSAPP</button>
+                   <button onClick={() => eliminarInstalacion(inst.id)} style={{background:'none', border:'none', color:theme.danger}}>🗑️</button>
+                </div>
+                {inst.evidencia && <img src={inst.evidencia} alt="Evidencia" style={{width:'100%', marginTop:'10px', borderRadius:'10px'}} />}
+              </div>
+            ))}
+          </div>
+        )}
+
         {vista === 'admin' && (
-          <>
+          <div style={{ animation: 'fadeIn 0.3s ease' }}>
             <div style={cardStyle}>
               <form onSubmit={guardarTurbo}>
                 <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
                   <input placeholder="# Lote" value={infoPaca.numero} onChange={e=>setInfoPaca({...infoPaca, numero: e.target.value})} style={inputStyle}/>
                   <input placeholder="Prov." value={infoPaca.proveedor} onChange={e=>setInfoPaca({...infoPaca, proveedor: e.target.value})} style={inputStyle}/>
                 </div>
-                <input ref={inputNombreRef} placeholder="Nombre" value={nuevoProd.nombre} onChange={e=>setNuevoProd({...nuevoProd, nombre: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+                <input ref={inputNombreRef} placeholder="Nombre del Producto" value={nuevoProd.nombre} onChange={e=>setNuevoProd({...nuevoProd, nombre: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
                 <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
                   <input type="number" placeholder="Costo" value={nuevoProd.costo} onChange={e=>setNuevoProd({...nuevoProd, costo: e.target.value})} style={inputStyle} required />
                   <input type="number" placeholder="Venta" value={nuevoProd.precio} onChange={e=>setNuevoProd({...nuevoProd, precio: e.target.value})} style={inputStyle} required />
-                  <input type="number" placeholder="Cant." value={nuevoProd.cantidad} onChange={e=>setNuevoProd({...nuevoProd, cantidad: e.target.value})} style={inputStyle} required />
+                  <input type="number" placeholder="Stock" value={nuevoProd.cantidad} onChange={e=>setNuevoProd({...nuevoProd, cantidad: e.target.value})} style={inputStyle} required />
                 </div>
-                <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.accent, color:'#fff', borderRadius:'10px', border:'none'}}>GUARDAR ⚡</button>
+                <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.accent, color:'#fff', borderRadius:'10px', border:'none'}}>GUARDAR PRODUCTO ⚡</button>
               </form>
             </div>
-            <div style={{...cardStyle, border:`1px solid ${theme.excel}50`}}>
-               <h3 style={{fontSize:'12px', margin:'0 0 10px 0', color:theme.excel}}>📦 EXPORTAR INVENTARIO TOTAL</h3>
-               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
-                  <button onClick={() => exportarExcelGenerico(inventario, 'Inventario_Completo')} style={{...btnExportStyle, background: theme.excel, justifyContent:'center'}}>EXCEL</button>
-                  <button onClick={() => exportarPDFGenerico('INVENTARIO COMPLETO', ['Nombre', 'Lote', 'Costo', 'Venta', 'Stock'], inventario.map(p => [p.nombre, p.paca, `$${p.costo_unitario}`, `$${p.precio}`, p.stock]), 'Inventario_Completo')} style={{...btnExportStyle, background: theme.pdf, justifyContent:'center'}}>PDF</button>
-               </div>
-            </div>
             <div style={cardStyle}>
-              <h3 style={{fontSize:'14px', marginTop:0}}>📊 ESTADÍSTICAS POR PROVEEDOR</h3>
-              <div style={{overflowX:'auto'}}>
-                <table style={{width:'100%', fontSize:'11px', borderCollapse:'collapse'}}>
-                  <thead>
-                    <tr style={{borderBottom:`1px solid ${theme.border}`}}>
-                      <th style={{textAlign:'left', padding:'8px'}}>Proveedor</th>
-                      <th style={{textAlign:'center', padding:'8px'}}>Stock</th>
-                      <th style={{textAlign:'right', padding:'8px'}}>Inversión</th>
-                      <th style={{textAlign:'right', padding:'8px'}}>V. Esperada</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {statsProveedores.map(([prov, s]) => (
-                      <tr key={prov} style={{borderBottom:`1px solid ${theme.border}`}}>
-                        <td style={{padding:'8px'}}>{prov}</td>
-                        <td style={{textAlign:'center', padding:'8px'}}>{s.stock}</td>
-                        <td style={{textAlign:'right', padding:'8px'}}>${s.inversion.toFixed(2)}</td>
-                        <td style={{textAlign:'right', padding:'8px'}}><b>${s.ventaEsperada.toFixed(2)}</b></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <h3 style={{marginTop:0, fontSize:'14px'}}>Gastos</h3>
+              <div style={{display:'flex', gap:'10px', marginBottom:'15px'}}>
+                <input placeholder="Concepto" value={nuevoGasto.concepto} onChange={e=>setNuevoGasto({...nuevoGasto, concepto: e.target.value})} style={inputStyle} />
+                <input type="number" placeholder="$" value={nuevoGasto.monto} onChange={e=>setNuevoGasto({...nuevoGasto, monto: e.target.value})} style={{...inputStyle, width:'100px'}} />
+                <button onClick={async()=>{
+                  if(!nuevoGasto.concepto || !nuevoGasto.monto) return;
+                  await supabase.from('gastos').insert([nuevoGasto]);
+                  setNuevoGasto({concepto:'', monto:''}); obtenerTodo();
+                }} style={{background:theme.danger, color:'#fff', border:'none', borderRadius:'10px', padding:'0 15px'}}>OK</button>
               </div>
             </div>
-          </>
+            <div style={cardStyle}>
+              <h3 style={{marginTop:0, fontSize:'14px'}}>Reportes Especiales</h3>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
+                <button onClick={()=>exportarExcelGenerico(inventario, 'Inventario')} style={{background:theme.excel, color:'#fff', padding:'10px', border:'none', borderRadius:'10px'}}>Excel Inv.</button>
+                <button onClick={()=>exportarPDFGenerico('Inventario', ['Nombre', 'Stock'], inventario.map(p=>[p.nombre, p.stock]), 'Inventario')} style={{background:theme.pdf, color:'#fff', padding:'10px', border:'none', borderRadius:'10px'}}>PDF Inv.</button>
+              </div>
+            </div>
+          </div>
         )}
 
         {vista === 'pos' && (
@@ -635,124 +464,49 @@ export default function App() {
               <h2 style={{fontSize:'40px', margin:0}}>${carrito.reduce((a,b)=>a+b.precio, 0).toFixed(2)}</h2>
             </div>
             {carritoAgrupado.map((item) => (
-              <div key={item.id} style={{...cardStyle, display:'flex', justifyContent:'space-between'}}>
-                <div>{item.nombre} x{item.cantCar}</div>
-                <button className={btnClass} onClick={() => setCarrito(carrito.filter(p => p.id !== item.id))} style={{color:theme.danger, background:'none', border:'none'}}>Quitar</button>
+              <div key={item.id} style={{...cardStyle, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                <div>
+                  <h4 style={{margin:0}}>{item.nombre}</h4>
+                  <span style={{fontSize:'12px', color:theme.textMuted}}>${item.precio} x {item.cantCar}</span>
+                </div>
+                <button className={btnClass} onClick={() => setCarrito(carrito.filter(p => p.id !== item.id))} style={{color:theme.danger, background:'none', border:'none', fontSize:'20px'}}>✕</button>
               </div>
             ))}
             {carrito.length > 0 && (
-              <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
-                <div style={{display:'flex', gap:'10px'}}>
-                  <button className={btnClass} onClick={finalizarVenta} style={{flex: 2, padding:'15px', background:theme.accent, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>COBRAR ✅</button>
-                  <button className={btnClass} onClick={apartarDesdeCarrito} style={{flex: 1, padding:'15px', background:theme.apartado, color:'#fff', borderRadius:'10px', fontWeight:'bold', border:'none'}}>APARTAR 🔖</button>
-                </div>
-                {/* BOTÓN NUEVO PUNTO DE VENTA */}
-                <button className={btnClass} onClick={() => setMostrarModalInstalacion(true)} style={{width:'100%', padding:'12px', background:theme.install, color:'#fff', borderRadius:'10px', border:'none', fontWeight:'bold'}}>PROGRAMAR INSTALACIÓN 🛠️</button>
-              </div>
+              <button className={btnClass} onClick={finalizarVenta} style={{width:'100%', padding:'20px', background:theme.accent, color:'#fff', borderRadius:'15px', fontWeight:'bold', fontSize:'18px', border:'none'}}>COBRAR ✅</button>
             )}
           </>
         )}
 
-        {/* MODAL DE INSTALACIÓN (Se usa en Ventas e Instalaciones) */}
-        {mostrarModalInstalacion && (
-          <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.8)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px'}}>
-            <div style={{...cardStyle, maxWidth:'400px', width:'100%'}}>
-              <h3 style={{marginTop:0, color: theme.install}}>ORDEN DE INSTALACIÓN</h3>
-              <form onSubmit={guardarInstalacion}>
-                <input placeholder="Cliente" value={nuevaInst.cliente} onChange={e=>setNuevaInst({...nuevaInst, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
-                <input placeholder="Dirección de Instalación" value={nuevaInst.direccion} onChange={e=>setNuevaInst({...nuevaInst, direccion: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
-                <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
-                  <input type="date" value={nuevaInst.fecha} onChange={e=>setNuevaInst({...nuevaInst, fecha: e.target.value})} style={inputStyle} required />
-                  <input type="time" value={nuevaInst.hora} onChange={e=>setNuevaInst({...nuevaInst, hora: e.target.value})} style={inputStyle} required />
-                </div>
-                <input placeholder="WhatsApp Cliente" value={nuevaInst.telefono} onChange={e=>setNuevaInst({...nuevaInst, telefono: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} />
-                <input placeholder="Nombre del Instalador" value={nuevaInst.instalador} onChange={e=>setNuevaInst({...nuevaInst, instalador: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
-                <div style={{display:'flex', gap:'10px'}}>
-                  <button type="button" onClick={()=>setMostrarModalInstalacion(false)} style={{...inputStyle, background: theme.bg, flex:1}}>Cancelar</button>
-                  <button type="submit" style={{...inputStyle, background: theme.install, color:'#fff', border:'none', flex:1, fontWeight:'bold'}}>AGENDAR</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
         {vista === 'historial' && (
-          <>
+          <div style={{ animation: 'fadeIn 0.3s ease' }}>
             <div style={cardStyle}>
               <input type="date" value={fechaConsulta} onChange={e=>setFechaConsulta(e.target.value)} style={{...inputStyle, marginBottom:'15px'}} />
               <div style={{display:'flex', justifyContent:'space-around'}}>
-                <div><p style={{margin:0, fontSize:'10px'}}>VENTAS</p><h3>${filtrados.totalV}</h3></div>
-                <div><p style={{margin:0, fontSize:'10px'}}>UTILIDAD</p><h3 style={{color:theme.accent}}>${filtrados.utilidad}</h3></div>
+                <div><p style={{margin:0, fontSize:'10px', color:theme.textMuted}}>VENTAS</p><h3 style={{margin:0}}>${filtrados.totalV}</h3></div>
+                <div><p style={{margin:0, fontSize:'10px', color:theme.textMuted}}>GASTOS</p><h3 style={{margin:0, color:theme.danger}}>${filtrados.totalG}</h3></div>
+                <div><p style={{margin:0, fontSize:'10px', color:theme.textMuted}}>UTILIDAD</p><h3 style={{margin:0, color:theme.accent}}>${filtrados.utilidad}</h3></div>
               </div>
-              <button className={btnClass} onClick={realizarCorte} style={{width:'100%', marginTop:'15px', padding:'10px', background:theme.accent, borderRadius:'8px', color:'#fff', border:'none'}}>CORTE DE CAJA 🏁</button>
+              <button className={btnClass} onClick={realizarCorte} style={{width:'100%', marginTop:'15px', padding:'10px', background:theme.accent, borderRadius:'8px', color:'#fff', border:'none', fontWeight:'bold'}}>REALIZAR CORTE 🏁</button>
             </div>
             <div style={cardStyle}>
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}>
-                <h3 style={{fontSize:'12px', margin:0, color:theme.textMuted}}>🧾 REGISTRO DE VENTAS</h3>
-                <div style={{display:'flex', gap:'5px'}}>
-                   <button onClick={() => exportarExcelGenerico(filtrados.vnt, 'Ventas_Dia')} style={{...btnExportStyle, background: theme.excel}}>XLS</button>
-                   <button onClick={() => exportarPDFGenerico(`VENTAS DEL DÍA ${fechaConsulta}`, ['ID', 'Detalle', 'Total'], filtrados.vnt.map(v => [v.id, v.detalles, `$${v.total}`]), 'Ventas_Dia')} style={{...btnExportStyle, background: theme.pdf}}>PDF</button>
+              <h3 style={{fontSize:'12px', margin:'0 0 10px 0', color:theme.textMuted}}>ÚLTIMOS CORTES</h3>
+              {cortes.map(c => (
+                <div key={c.id} style={{fontSize:'11px', borderBottom:`1px solid ${theme.border}`, padding:'5px 0'}}>
+                  <b>{c.timestamp}</b> - Resp: {c.responsable} <br/>
+                  Caja: ${c.reportado} | Dif: <span style={{color: c.diferencia < 0 ? theme.danger : theme.accent}}>${c.diferencia}</span>
                 </div>
-              </div>
-              <div style={{overflowX:'auto'}}>
-                <table style={{width:'100%', fontSize:'10px', borderCollapse:'collapse'}}>
-                  <thead>
-                    <tr style={{borderBottom:`1px solid ${theme.border}`, color:theme.textMuted}}>
-                      <th style={{textAlign:'left', padding:'5px'}}>Hora / Folio</th>
-                      <th style={{textAlign:'left', padding:'5px'}}>Vendedor / Pago</th>
-                      <th style={{textAlign:'left', padding:'5px'}}>Detalle Productos</th>
-                      <th style={{textAlign:'right', padding:'5px'}}>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtrados.vnt.map((v) => (
-                      <tr key={v.id} style={{borderBottom:`1px solid ${theme.border}`}}>
-                        <td style={{padding:'5px', verticalAlign:'top'}}>{new Date(v.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}<br/><span style={{fontSize:'8px', opacity:0.7}}>{v.detalles?.match(/\[(.*?)\]/)?.[1] || 'S/F'}</span></td>
-                        <td style={{padding:'5px', verticalAlign:'top'}}><span style={{color:theme.accent}}>{v.detalles?.match(/Vendedor: (.*?) \|/)?.[1] || 'LIVE'}</span><br/>{v.detalles?.match(/Pago: (.*?) \|/)?.[1] || 'Efectivo'}</td>
-                        <td style={{padding:'5px', fontSize:'9px', maxWidth:'150px'}}>{v.detalles?.split('Productos: ')[1] || v.detalles}</td>
-                        <td style={{textAlign:'right', padding:'5px', fontWeight:'bold'}}>${v.total}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              ))}
             </div>
-            <div style={cardStyle}>
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px'}}>
-                <h3 style={{fontSize:'12px', margin:0, color:theme.textMuted}}>📋 CORTES DE CAJA</h3>
-                <div style={{display:'flex', gap:'5px'}}>
-                   <button onClick={() => exportarExcelGenerico(cortes, 'Cortes_Historico')} style={{...btnExportStyle, background: theme.excel}}>XLS</button>
-                   <button onClick={() => exportarPDFGenerico('HISTORIAL DE CORTES', ['Fecha', 'Responsable', 'Reportado', 'Dif'], cortes.map(c => [c.timestamp, c.responsable, `$${c.reportado}`, `$${c.diferencia}`]), 'Cortes_Historico')} style={{...btnExportStyle, background: theme.pdf}}>PDF</button>
-                </div>
-              </div>
-              <div style={{overflowX:'auto'}}>
-                <table style={{width:'100%', fontSize:'10px', borderCollapse:'collapse'}}>
-                  <thead>
-                    <tr style={{borderBottom:`1px solid ${theme.border}`, color:theme.textMuted}}>
-                      <th style={{textAlign:'left', padding:'5px'}}>Fecha/Hora</th>
-                      <th style={{textAlign:'left', padding:'5px'}}>Responsable</th>
-                      <th style={{textAlign:'right', padding:'5px'}}>Físico</th>
-                      <th style={{textAlign:'right', padding:'5px'}}>Dif.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cortes.filter(c => c.fechaFiltro === fechaConsulta).map((c) => (
-                      <tr key={c.id} style={{borderBottom:`1px solid ${theme.border}`}}>
-                        <td style={{padding:'5px'}}>{c.timestamp.split(', ')[1]}</td>
-                        <td style={{padding:'5px'}}>{c.responsable}</td>
-                        <td style={{textAlign:'right', padding:'5px'}}>${c.reportado}</td>
-                        <td style={{textAlign:'right', padding:'5px', color: c.diferencia < 0 ? theme.danger : theme.accent}}>{c.diferencia >= 0 ? '+' : ''}$${c.diferencia}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+          </div>
         )}
       </main>
 
       <nav style={{ position: 'fixed', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', padding: '12px', borderRadius: '20px', zIndex: 100 }}>
+        <button className={btnClass} onClick={()=>setVista('live')} style={{background: vista==='live'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
+          <span style={{fontSize:'22px'}}>🔴</span>
+          <span style={{fontSize:'9px', color: theme.textMuted}}>Live</span>
+        </button>
         <button className={btnClass} onClick={()=>setVista('catalogo')} style={{background: vista==='catalogo'?theme.bg:'none', border:'none', flexDirection: 'column', gap: '4px'}}>
           <span style={{fontSize:'22px'}}>📦</span>
           <span style={{fontSize:'9px', color: theme.textMuted}}>Stock</span>
@@ -786,6 +540,27 @@ export default function App() {
         .btn-interactivo { transition: transform 0.1s active; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .btn-interactivo:active { transform: scale(0.95); }
       `}</style>
+
+      {/* MODAL INSTALACIÓN */}
+      {mostrarModalInstalacion && (
+        <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.8)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px'}}>
+          <div style={{...cardStyle, width:'100%', maxWidth:'400px'}}>
+            <h3 style={{marginTop:0}}>Programar Instalación</h3>
+            <form onSubmit={guardarInstalacion}>
+              <input placeholder="Cliente" value={nuevaInst.cliente} onChange={e=>setNuevaInst({...nuevaInst, cliente: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+              <input placeholder="Dirección" value={nuevaInst.direccion} onChange={e=>setNuevaInst({...nuevaInst, direccion: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+              <div style={{display:'flex', gap:'10px', marginBottom:'10px'}}>
+                <input type="date" value={nuevaInst.fecha} onChange={e=>setNuevaInst({...nuevaInst, fecha: e.target.value})} style={inputStyle} required />
+                <input type="time" value={nuevaInst.hora} onChange={e=>setNuevaInst({...nuevaInst, hora: e.target.value})} style={inputStyle} required />
+              </div>
+              <input placeholder="Instalador" value={nuevaInst.instalador} onChange={e=>setNuevaInst({...nuevaInst, instalador: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+              <input placeholder="Teléfono" value={nuevaInst.telefono} onChange={e=>setNuevaInst({...nuevaInst, telefono: e.target.value})} style={{...inputStyle, marginBottom:'10px'}} required />
+              <button className={btnClass} style={{width:'100%', padding:'12px', background:theme.install, color:'#fff', border:'none', borderRadius:'10px', fontWeight:'bold'}}>GUARDAR 🛠️</button>
+              <button type="button" onClick={()=>setMostrarModalInstalacion(false)} style={{width:'100%', marginTop:'10px', background:'none', color:theme.textMuted, border:'none'}}>Cancelar</button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
