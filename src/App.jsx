@@ -1,178 +1,184 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { jsPDF } from "jspdf";
+import "jspdf-autotable";
 
-// --- CONFIGURACIÓN SUPABASE ---
+// CONFIGURACIÓN SUPABASE
 const supabase = createClient(
   'https://dtrimzswyuwunywokekh.supabase.co', 
   'sb_publishable__gX8fP0sXBZhIFgCAM90UA_QQg03P79'
 );
 
-// --- TEMA DARK MODE V25 ---
+// PASO 5: ESTÉTICA DARK MODE V25
 const theme = {
   bg: '#020617',
   card: '#0f172a',
   border: '#1e293b',
   text: '#f8fafc',
   textMuted: '#94a3b8',
-  accent: '#10b981',
+  accent: '#10b981', // Emerald
   danger: '#ef4444',
   warning: '#f59e0b',
-  install: '#3b82f6',
-  master: '#8b5cf6'
+  install: '#3b82f6'
 };
 
-export default function App() {
-  // --- 1. SEGURIDAD Y MULTIUSUARIO ---
-  const [auth, setAuth] = useState(JSON.parse(localStorage.getItem('authStilaV25')) || { user: '', role: '', pass: '' });
-  const [inputLogin, setInputLogin] = useState({ user: '', pass: '' });
-  
-  // --- ESTADOS NUCLEARES ---
-  const [vista, setVista] = useState('catalogo');
+export default function StilaProV25() {
+  // --- ESTADOS DE NÚCLEO ---
+  const [session, setSession] = useState(JSON.parse(localStorage.getItem('stila_session')) || null);
+  const [vista, setVista] = useState('login');
   const [inventario, setInventario] = useState([]);
   const [carrito, setCarrito] = useState([]);
-  const [historial, setHistorial] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  
+  // --- FORMULARIOS ---
+  const [loginForm, setLoginForm] = useState({ user: '', pass: '' });
   const [busqueda, setBusqueda] = useState('');
-  const [anuncio, setAnuncio] = useState('Bienvenido a STILA-PRO V25. Sistema Sincronizado.');
 
-  // --- INTELIGENCIA FINANCIERA Y LOTES ---
-  const [lotes, setLotes] = useState(JSON.parse(localStorage.getItem('lotesStila')) || []);
-  const [gastosExtra, setGastosExtra] = useState({ envio: 0, instalacion: 0 });
-  const [politicasTicket, setPoliticasTicket] = useState(localStorage.getItem('politicasStila') || "• Sin cambios en liquidación.\n• Garantía: 48 hrs.");
-  const [equipo, setEquipo] = useState(JSON.parse(localStorage.getItem('equipoStila')) || []);
-  const [instalaciones, setInstalaciones] = useState(JSON.parse(localStorage.getItem('instStilaPro')) || []);
+  // PASO 2: SEGURIDAD DINÁMICA (Credenciales Maestras)
+  const MASTER_USER = "ADMIN_STILA";
+  const MASTER_PASS = "STILA_MASTER";
 
-  // --- EFECTOS: REALTIME (Punto 1.2) ---
+  // --- EFECTOS INICIALES ---
   useEffect(() => {
-    if (auth.user) {
-      obtenerTodo();
-      cargarScripts();
-
-      // Suscripción en Tiempo Real
-      const channel = supabase
-        .channel('stila-realtime')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, () => obtenerTodo())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, () => obtenerTodo())
-        .subscribe();
-
-      return () => supabase.removeChannel(channel);
+    if (session) {
+      setVista('catalogo');
+      inicializarRealtime();
+      fetchData();
     }
-  }, [auth]);
+  }, [session]);
 
-  async function obtenerTodo() {
-    const { data: p } = await supabase.from('productos').select('*').order('nombre');
-    const { data: v } = await supabase.from('ventas').select('*').order('created_at', { ascending: false });
-    if (p) setInventario(p);
-    if (v) setHistorial(v);
-  }
-
-  const cargarScripts = () => {
-    if (!window.XLSX) {
-      const s = document.createElement("script");
-      s.src = "https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js";
-      document.head.appendChild(s);
-    }
-    if (!window.jspdf) {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-      document.head.appendChild(s);
-    }
+  const fetchData = async () => {
+    const { data: prod } = await supabase.from('productos').select('*');
+    if (prod) setInventario(prod);
+    const { data: userList } = await supabase.from('perfiles_usuario').select('*');
+    if (userList) setUsuarios(userList);
   };
 
-  // --- LÓGICA DE ACCESO (Punto 1.1) ---
-  const handleLogin = (e) => {
+  // PASO 5: SINCRONIZACIÓN REALTIME
+  const inicializarRealtime = () => {
+    const channel = supabase
+      .channel('cambios-stila')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, (payload) => {
+        fetchData();
+      })
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  };
+
+  // --- LÓGICA DE ACCESO (PASO 2) ---
+  const manejarLogin = async (e) => {
     e.preventDefault();
-    if (inputLogin.pass === 'STILA_MASTER') {
-      const userData = { 
-        user: inputLogin.user.toUpperCase(), 
-        role: inputLogin.user.includes('ADMIN') ? 'Administrador' : 'Vendedor' 
-      };
-      setAuth(userData);
-      localStorage.setItem('authStilaV25', JSON.stringify(userData));
+    const { user, pass } = loginForm;
+
+    // 1. Verificar Acceso Raíz
+    if (user === MASTER_USER && pass === MASTER_PASS) {
+      const sesionMaestra = { nombre: 'Root Admin', rol: 'Admin', id: 'root' };
+      finalizarLogin(sesionMaestra);
+      return;
+    }
+
+    // 2. Verificar en Base de Datos
+    const { data: perfil, error } = await supabase
+      .from('perfiles_usuario')
+      .select('*')
+      .eq('usuario_login', user)
+      .eq('clave_acceso', pass)
+      .single();
+
+    if (perfil) {
+      // Validar Expiración (90 días)
+      const fechaCreacion = new Date(perfil.fecha_creacion_clave);
+      const diasTranscurridos = (new Date() - fechaCreacion) / (1000 * 60 * 60 * 24);
+
+      if (diasTranscurridos > 90) {
+        alert("⚠️ CLAVE EXPIRADA. Contacte al Administrador para renovación.");
+        return;
+      }
+      finalizarLogin(perfil);
     } else {
-      alert("CLAVE MAESTRA INCORRECTA");
+      alert("Credenciales incorrectas.");
     }
   };
 
-  // --- EXPORTACIÓN EXCEL (Punto 2.3) ---
-  const exportarExcel = () => {
-    const dataExport = historial.map(v => ({
-        Folio: v.folio_ticket,
-        Fecha: new Date(v.created_at).toLocaleDateString(),
-        Vendedor: v.vendedor_nombre,
-        Total: v.total,
-        Utilidad: v.utilidad_neta,
-        Detalles: v.detalles
-    }));
-    const ws = XLSX.utils.json_to_sheet(dataExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Reporte_Global");
-    XLSX.writeFile(wb, `STILA_V25_REPORTE.xlsx`);
+  const finalizarLogin = (userData) => {
+    setSession(userData);
+    localStorage.setItem('stila_session', JSON.stringify(userData));
   };
 
-  // --- ALERTAS WHATSAPP (Punto 3.2) ---
-  const alertaStockBajo = (prod) => {
-    const msg = `⚠️ *RESURTIDO URGENTE*\nProducto: ${prod.nombre}\nStock Actual: ${prod.stock}\nCosto Último Lote: $${prod.costo_unitario}`;
-    window.open(`https://wa.me/521XXXXXXXXXX?text=${encodeURIComponent(msg)}`); 
+  const cerrarSesion = () => {
+    localStorage.removeItem('stila_session');
+    setSession(null);
+    setVista('login');
   };
 
-  // --- TICKET DINÁMICO (Punto 4) ---
-  const imprimirTicketV25 = (venta, folio) => {
-    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: [80, 160] });
-    doc.setFontSize(12); doc.text("STILA-PRO V25", 40, 10, { align: 'center' });
+  // --- INTELIGENCIA DE CATÁLOGO (PASO 3) ---
+  const stockEnCarrito = (id) => carrito.filter(item => item.id === id).length;
+
+  const catalogoFiltrado = useMemo(() => {
+    return inventario.filter(p => {
+      const stockDisponible = p.stock - stockEnCarrito(p.id);
+      return stockDisponible > 0 && p.nombre.toLowerCase().includes(busqueda.toLowerCase());
+    });
+  }, [inventario, carrito, busqueda]);
+
+  // ALERTAS PROACTIVAS
+  const verificarAlertaStock = (producto) => {
+    if (producto.stock >= 1 && producto.stock <= 3) {
+      // Alerta Sonora
+      const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+      audio.play();
+      return true;
+    }
+    return false;
+  };
+
+  const enviarWhatsAppStock = (p) => {
+    const msg = `⚠️ *ALERTA DE RESURTIDO*\nProducto: ${p.nombre}\nLote: ${p.lote}\nStock Actual: ${p.stock} unidades.`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  // --- GENERACIÓN DE TICKET 80mm (MÓDULO SOLICITADO) ---
+  const generarTicketPDF = (ventaData) => {
+    const doc = new jsPDF({ unit: 'mm', format: [80, 150] });
+    doc.setFontSize(12);
+    doc.text("STILA-PRO V25.17", 40, 10, { align: "center" });
     doc.setFontSize(8);
-    doc.text(`Folio: ${folio}`, 10, 20);
-    doc.text(`Vendedor: ${auth.user}`, 10, 25);
-    doc.line(5, 28, 75, 28);
+    doc.text(`Folio: ${ventaData.folio}`, 40, 15, { align: "center" });
+    doc.text(`Vendedor: ${session.nombre}`, 5, 22);
+    doc.line(5, 25, 75, 25);
     
-    // Desglose de costos adicionales (Punto 2.2)
-    doc.text(`ENVÍO: $${gastosExtra.envio}`, 10, 35);
-    doc.text(`INSTALACIÓN: $${gastosExtra.instalacion}`, 10, 40);
+    let y = 30;
+    carrito.forEach(item => {
+      doc.text(`${item.nombre.substring(0,15)}`, 5, y);
+      doc.text(`$${item.precio}`, 75, y, { align: "right" });
+      y += 5;
+    });
+
+    doc.line(5, y, 75, y);
     doc.setFontSize(10);
-    doc.text(`TOTAL: $${venta.total}`, 70, 50, { align: 'right' });
-    
-    doc.line(5, 55, 75, 55);
-    doc.setFontSize(7);
-    const pols = doc.splitTextToSize(politicasTicket, 65);
-    doc.text(pols, 10, 60);
-    doc.save(`Ticket_${folio}.pdf`);
+    doc.text(`TOTAL: $${ventaData.total}`, 75, y + 7, { align: "right" });
+    doc.save(`Ticket_${ventaData.folio}.pdf`);
   };
 
-  async function finalizarVenta() {
-    const subtotal = carrito.reduce((a, b) => a + Number(b.precio), 0);
-    const totalFinal = subtotal + Number(gastosExtra.envio) + Number(gastosExtra.instalacion);
-    const costoTotal = carrito.reduce((a, b) => a + Number(b.costo_unitario || 0), 0);
-    const folio = `TKT-${Math.floor(1000 + Math.random() * 8999)}`;
-
-    const { data, error } = await supabase.from('ventas').insert([{
-      total: totalFinal,
-      costo_total: costoTotal,
-      utilidad_neta: totalFinal - costoTotal,
-      folio_ticket: folio,
-      vendedor_nombre: auth.user,
-      detalles: `Envío: $${gastosExtra.envio} | Inst: $${gastosExtra.instalacion} | Productos: ` + carrito.map(i => i.nombre).join(', ')
-    }]).select();
-
-    if (!error) {
-      imprimirTicketV25(data[0], folio);
-      setCarrito([]);
-      setGastosExtra({ envio: 0, instalacion: 0 });
-      obtenerTodo();
-    }
-  }
-
-  // --- ESTILOS ---
-  const cardStyle = { background: theme.card, borderRadius: '15px', padding: '15px', border: `1px solid ${theme.border}`, marginBottom: '12px' };
-  const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, boxSizing: 'border-box' };
-
-  if (!auth.user) {
+  // --- RENDERIZADO DE VISTAS ---
+  if (!session) {
     return (
-      <div style={{ backgroundColor: theme.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-        <div style={{ ...cardStyle, width: '100%', maxWidth: '350px' }}>
-          <h1 style={{ color: theme.accent, textAlign: 'center', margin: '0 0 20px 0' }}>STILA-PRO V25</h1>
-          <form onSubmit={handleLogin}>
-            <input placeholder="NOMBRE EN DIRECTORIO" onChange={e => setInputLogin({...inputLogin, user: e.target.value})} style={{ ...inputStyle, marginBottom: '10px' }} required />
-            <input type="password" placeholder="CLAVE MAESTRA" onChange={e => setInputLogin({...inputLogin, pass: e.target.value})} style={{ ...inputStyle, marginBottom: '20px' }} required />
-            <button style={{ width: '100%', padding: '15px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor:'pointer' }}>ENTRAR AL SISTEMA</button>
+      <div style={{ backgroundColor: theme.bg, height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ background: theme.card, padding: '30px', borderRadius: '15px', width: '300px', border: `1px solid ${theme.border}` }}>
+          <h2 style={{ color: theme.accent, textAlign: 'center', marginBottom: '20px' }}>STILA-PRO</h2>
+          <form onSubmit={manejarLogin}>
+            <input 
+              placeholder="Usuario" 
+              style={styles.input} 
+              onChange={e => setLoginForm({...loginForm, user: e.target.value})} 
+            />
+            <input 
+              type="password" 
+              placeholder="Contraseña" 
+              style={styles.input} 
+              onChange={e => setLoginForm({...loginForm, pass: e.target.value})} 
+            />
+            <button style={{ ...styles.btn, background: theme.accent }}>INGRESAR</button>
           </form>
         </div>
       </div>
@@ -180,92 +186,92 @@ export default function App() {
   }
 
   return (
-    <div style={{ backgroundColor: theme.bg, color: theme.text, minHeight: '100vh', fontFamily: 'sans-serif' }}>
-      {/* 3.1 ANUNCIOS ADMIN */}
-      <div style={{ background: theme.master, color: '#fff', padding: '8px', fontSize: '12px', fontWeight: 'bold', textAlign: 'center' }}>
-        <marquee>📢 {anuncio} | Vendedor: {auth.user} | [SINCRONIZADO REALTIME]</marquee>
-      </div>
+    <div style={{ backgroundColor: theme.bg, minHeight: '100vh', color: theme.text, paddingBottom: '80px' }}>
+      {/* HEADER */}
+      <header style={{ padding: '15px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between' }}>
+        <span>⚡ <b>STILA-PRO V25</b></span>
+        <button onClick={cerrarSesion} style={{ color: theme.danger, background: 'none', border: 'none' }}>Cerrar</button>
+      </header>
 
-      <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
-        
+      <main style={{ padding: '20px' }}>
         {vista === 'catalogo' && (
-          <>
-            <input placeholder="🔍 Buscar en inventario..." value={busqueda} onChange={e=>setBusqueda(e.target.value)} style={{...inputStyle, marginBottom:'15px'}} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              {inventario.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase())).map(p => (
-                <div key={p.id} style={{...cardStyle, border: p.stock <= 3 ? `1px solid ${theme.danger}` : `1px solid ${theme.border}`}}>
-                  <div style={{display:'flex', justifyContent:'space-between', fontSize:'10px'}}>
-                    <span style={{color: p.stock <= 3 ? theme.danger : theme.accent}}>STOCK: {p.stock}</span>
-                    {p.stock <= 3 && <button onClick={() => alertaStockBajo(p)} style={{background:'none', border:'none'}}>🔔</button>}
-                  </div>
-                  <h4 style={{margin:'10px 0'}}>{p.nombre}</h4>
-                  <p style={{fontSize:'20px', fontWeight:'bold', margin:0}}>${p.precio}</p>
-                  <button onClick={()=>setCarrito([...carrito, p])} style={{width:'100%', marginTop:'10px', padding:'10px', background:theme.accent, color:'#fff', border:'none', borderRadius:'10px'}}>AGREGAR</button>
+          <div>
+            <input 
+              placeholder="🔍 Buscar producto..." 
+              style={styles.input} 
+              value={busqueda}
+              onChange={e => setBusqueda(e.target.value)}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+              {catalogoFiltrado.map(p => (
+                <div key={p.id} style={{ ...styles.card, borderColor: p.stock <= 3 ? theme.warning : theme.border }}>
+                  <p style={{ fontSize: '10px', color: theme.textMuted }}>LOTE: {p.lote}</p>
+                  <h4 style={{ margin: '5px 0' }}>{p.nombre}</h4>
+                  <p style={{ color: theme.accent, fontWeight: 'bold' }}>${p.precio}</p>
+                  
+                  {p.stock <= 3 && (
+                    <button onClick={() => enviarWhatsAppStock(p)} style={styles.btnWa}>WA Alerta 📱</button>
+                  )}
+                  
+                  <button 
+                    onClick={() => setCarrito([...carrito, p])}
+                    style={{ ...styles.btn, marginTop: '10px', fontSize: '11px' }}
+                  >
+                    Añadir al Carrito
+                  </button>
                 </div>
               ))}
             </div>
-          </>
+          </div>
         )}
 
         {vista === 'pos' && (
-          <>
-            <div style={{...cardStyle, border: `2px solid ${theme.accent}`, textAlign:'center'}}>
-              <p style={{margin:0, color:theme.accent, fontSize:'12px'}}>TOTAL A PAGAR</p>
-              <h2 style={{fontSize:'45px', margin:0}}>${carrito.reduce((a,b)=>a+Number(b.precio), 0) + Number(gastosExtra.envio) + Number(gastosExtra.instalacion)}</h2>
-            </div>
-            
-            {/* 2.2 COSTOS ADICIONALES */}
-            <div style={{...cardStyle, display:'flex', gap:'10px'}}>
-              <div style={{flex:1}}>
-                <label style={{fontSize:'10px', color:theme.textMuted}}>COSTO ENVÍO</label>
-                <input type="number" value={gastosExtra.envio} onChange={e=>setGastosExtra({...gastosExtra, envio: e.target.value})} style={inputStyle} />
-              </div>
-              <div style={{flex:1}}>
-                <label style={{fontSize:'10px', color:theme.textMuted}}>COSTO INSTALACIÓN</label>
-                <input type="number" value={gastosExtra.instalacion} onChange={e=>setGastosExtra({...gastosExtra, instalacion: e.target.value})} style={inputStyle} />
-              </div>
-            </div>
-
+          <div style={styles.card}>
+            <h3>Carrito ({carrito.length})</h3>
             {carrito.map((item, idx) => (
-              <div key={idx} style={{...cardStyle, display:'flex', justifyContent:'space-between'}}>
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                 <span>{item.nombre}</span>
-                <span style={{color:theme.accent}}>${item.precio}</span>
+                <span>${item.precio}</span>
               </div>
             ))}
-            {carrito.length > 0 && <button onClick={finalizarVenta} style={{width:'100%', padding:'20px', background:theme.accent, color:'#fff', borderRadius:'15px', border:'none', fontWeight:'bold', fontSize:'18px'}}>FINALIZAR COBRO</button>}
-          </>
-        )}
-
-        {vista === 'admin' && (
-          <div>
-            {/* 2.3 REPORTE GLOBAL */}
-            <button onClick={exportarExcel} style={{...cardStyle, width:'100%', background:theme.install, color:'#fff', fontWeight:'bold', border:'none', cursor:'pointer'}}>📊 EXPORTAR REPORTE GLOBAL (XLSX)</button>
-            
-            <div style={cardStyle}>
-              <h3 style={{fontSize:'14px', color:theme.accent}}>⚙️ EDITOR DE POLÍTICAS</h3>
-              <textarea 
-                value={politicasTicket} 
-                onChange={e => {setPoliticasTicket(e.target.value); localStorage.setItem('politicasStila', e.target.value);}} 
-                style={{...inputStyle, height:'100px', fontSize:'12px'}}
-              />
-            </div>
-
-            <div style={cardStyle}>
-              <h3 style={{fontSize:'14px', color:theme.master}}>📢 CAMBIAR ANUNCIO</h3>
-              <input placeholder="Escribe el mensaje para el equipo..." onChange={e => setAnuncio(e.target.value)} style={inputStyle} />
+            <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '10px', marginTop: '10px' }}>
+              <h4>Total: ${carrito.reduce((a, b) => a + b.precio, 0)}</h4>
+              <button 
+                onClick={() => {
+                  generarTicketPDF({ folio: 'V-1001', total: carrito.reduce((a, b) => a + b.precio, 0) });
+                  alert("Venta Procesada");
+                  setCarrito([]);
+                }}
+                style={{ ...styles.btn, background: theme.accent }}
+              >
+                FINALIZAR Y TICKET
+              </button>
             </div>
           </div>
         )}
       </main>
 
-      {/* NAVEGACIÓN */}
-      <nav style={{ position: 'fixed', bottom: '20px', left: '20px', right: '20px', background: 'rgba(15, 23, 42, 0.95)', border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', padding: '15px', borderRadius: '20px', backdropFilter: 'blur(10px)' }}>
-        <button onClick={()=>setVista('catalogo')} style={{background: vista==='catalogo'?theme.accent:'none', border:'none', color:'#fff', fontSize:'20px', borderRadius:'10px', padding:'5px 15px'}}>📦</button>
-        <button onClick={()=>setVista('pos')} style={{background: vista==='pos'?theme.accent:'none', border:'none', color:'#fff', fontSize:'20px', borderRadius:'10px', padding:'5px 15px'}}>🛒</button>
-        {auth.role === 'Administrador' && (
-          <button onClick={()=>setVista('admin')} style={{background: vista==='admin'?theme.accent:'none', border:'none', color:'#fff', fontSize:'20px', borderRadius:'10px', padding:'5px 15px'}}>⚙️</button>
-        )}
+      {/* NAV INFERIOR (LAS 7 VENTANAS) */}
+      <nav style={styles.nav}>
+        <button onClick={() => setVista('catalogo')} style={styles.navBtn}>📦<br/>Catálogo</button>
+        <button onClick={() => setVista('pos')} style={styles.navBtn}>
+          🛒<br/>POS {carrito.length > 0 && <span style={styles.badge}>{carrito.length}</span>}
+        </button>
+        <button onClick={() => setVista('apartados')} style={styles.navBtn}>🔖<br/>Apartados</button>
+        <button onClick={() => setVista('logistica')} style={styles.navBtn}>🚚<br/>Logística</button>
+        <button onClick={() => setVista('dashboard')} style={styles.navBtn}>📊<br/>BI</button>
+        <button onClick={() => setVista('admin')} style={styles.navBtn}>⚙️<br/>Admin</button>
       </nav>
     </div>
   );
 }
+
+const styles = {
+  input: { width: '100%', padding: '12px', marginBottom: '15px', borderRadius: '8px', border: `1px solid ${theme.border}`, background: theme.bg, color: '#fff', boxSizing: 'border-box' },
+  btn: { width: '100%', padding: '12px', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 'bold', cursor: 'pointer', background: theme.card },
+  card: { background: theme.card, padding: '15px', borderRadius: '12px', border: `1px solid ${theme.border}`, position: 'relative' },
+  nav: { position: 'fixed', bottom: 0, left: 0, right: 0, background: theme.card, display: 'flex', justifyContent: 'space-around', padding: '10px', borderTop: `1px solid ${theme.border}` },
+  navBtn: { background: 'none', border: 'none', color: '#fff', fontSize: '10px', textAlign: 'center' },
+  badge: { background: theme.danger, color: '#fff', borderRadius: '50%', padding: '2px 6px', fontSize: '9px', position: 'absolute' },
+  btnWa: { background: '#25D366', color: '#fff', border: 'none', borderRadius: '5px', fontSize: '10px', padding: '5px', width: '100%', marginTop: '5px' }
+};
